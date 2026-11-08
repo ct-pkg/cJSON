@@ -10,13 +10,15 @@
 #   2. ct.pkg has the five expected keys, requires ct >= 0.20.3, and points at
 #      third_party/ (never vendor/: `ct get` skips vendor/);
 #   3. third_party/cJSON.{h,c} match tools/third_party.sha256 byte for byte;
-#   4. no C type leaks into README / demo / tests, and no free `pub fn`
-#      (every public method must have a type or namespace host);
+#   4. no C type leaks into README examples / API tables / demo / tests
+#      (the glossary section is exempt: it exists to spell out the
+#      `pub type` mapping, so the C names there are the subject, not a leak),
+#      and no free `pub fn` (every public method must have a type host);
 #   5. the removed `toJSON()` / node-level `drop()` stay removed, the walker is
 #      `nextSibling`, and the package never calls `cJSON_InitHooks(`;
-#   6. README has exactly nine `## ` sections and its error table names every
+#   6. README has exactly ten `## ` sections and its error table names every
 #      `JsonStatus` code (both directions checked);
-#   7. the 10k-loop RSS bounds (tests/mem.sh, three modes);
+#   7. the 1k-vs-10k RSS bounds (tests/mem.sh, five modes);
 #   8. an installed-layout build: a real `ct get` copies the package into
 #      <tmp>/vendor/json, `ct install` must print third_party flags and the
 #      copied tree must still contain third_party/ (the installer skips
@@ -148,6 +150,16 @@ if [ "$ci1_cjson" -eq 0 ] && [ "$ci1_doc" -eq 0 ]; then
 else
     bad "C1.1 C type leak" "cJSON=$ci1_cjson ct_json_doc=$ci1_doc after stripping aliases and recipes"
 fi
+# C1.1 (tightened): the strip above skips `pub type` lines because `JsonDoc`
+# legitimately aliases the package-private `ct_json_doc` tag. That would also
+# hide a regression of the node alias itself, so pin that one line: `JsonNode`
+# must name the package handle `ct_json_node`, never the vendored `cJSON`.
+if grep -Eq '^[[:space:]]*pub[[:space:]]+type[[:space:]]+JsonNode[[:space:]]*=[[:space:]]*struct[[:space:]]+ct_json_node[[:space:]]*;' \
+        "$pkg/json/Json.m.ct"; then
+    ok "C1.1 JsonNode aliases the package handle, not the vendored struct"
+else
+    bad "C1.1 JsonNode alias" "expected 'pub type JsonNode = struct ct_json_node;'"
+fi
 # C1.9: the Lib host is exactly the seven constructors; a `set*` smuggled onto
 # the namespace would change the configuration story.
 lib_methods="$(awk '
@@ -188,10 +200,26 @@ done < <(printf '%s\n' \
     'JsonDoc *setRoot(' 'JsonNode *put(' 'JsonNode *append(' 'JsonDoc *newDoc(' \
     'JsonNode *newNull(' 'JsonNode *newBool(' 'JsonNode *newNumber(' \
     'JsonNode *newString(' 'JsonNode *newArray(' 'JsonNode *newObject(')
-leaks="$(grep -rn 'cJSON \*\|cJSON\*\|struct cJSON\|ct_json_' \
-    "$pkg/README.md" "$pkg/demo" "$pkg/tests" 2>/dev/null || true)"
+# C1.2: C type names must not appear on the copy-paste surface - the examples,
+# API tables and prose of README, plus demo/ and tests/. The glossary is the
+# single exempt section: its declared purpose is to spell out the identity
+# mapping (`pub type JsonNode = struct ct_json_node` / `= struct ct_json_doc`),
+# so there the C name is the subject being explained, not a token a reader would
+# copy into their own code. The exemption is section-scoped (`## ...术语表`
+# until the next `^## `); every other section is still scanned line by line,
+# so a `cJSON *` injected into any example block still fails the gate.
+leak_pat='cJSON ?\*|struct cJSON|ct_json_'
+leaks="$(
+    {
+        awk '
+            /^## / { in_glossary = ($0 ~ /术语表/ || $0 ~ /Glossary/) }
+            !in_glossary { print FILENAME ":" FNR "|" $0 }
+        ' "$pkg/README.md"
+        grep -rEn "$leak_pat" "$pkg/demo" "$pkg/tests" 2>/dev/null || true
+    } | grep -E "$leak_pat" || true
+)"
 if [ -z "$leaks" ]; then
-    ok "no C types in README / demo / tests"
+    ok "no C types in README examples / API docs / demo / tests"
 else
     bad "C type leak" "$(printf '%s' "$leaks" | head -3)"
 fi
@@ -260,10 +288,10 @@ echo
 
 echo "== README =="
 sections="$(grep -c '^## ' "$pkg/README.md" 2>/dev/null || true)"
-if [ "$sections" = "9" ]; then
-    ok "README has exactly 9 sections"
+if [ "$sections" = "10" ]; then
+    ok "README has exactly 10 sections"
 else
-    bad "README sections" "found $sections, expected 9"
+    bad "README sections" "found $sections, expected 10"
 fi
 echo
 
