@@ -1,0 +1,6 @@
+name: ct
+stable: 1
+tags: 2
+offset: -1
+compact: {"name":"ct","version":"0.20.3","stable":true,"tags":["c","json"]}
+built: {"ok":true,"items":[1,"two"]}

@@ -1,0 +1,55 @@
+/*
+ * demo/main.ct - the smallest end-to-end json program.
+ *
+ *   ct build -I . --cflags '-I vendor/json/third_party -DCJSON_NESTING_LIMIT=64' \
+ *            --ldflags 'vendor/json/third_party/cJSON.c -lm' demo/main.ct -o demo
+ *
+ * tests/run.sh builds and runs this and diffs the output against
+ * demo/expected.out, so the demo is a checked artifact, not just a sample.
+ *
+ * The right-hand side is one chain everywhere: the text is the receiver of
+ * `toDoc()`, every setter would return the same doc, and a built tree goes
+ * `newObject().put(...)` -> doc -> `write()`.
+ *
+ * License: MIT (see LICENSE).
+ */
+
+#include <stdio.h>
+
+import json::JsonTypes;
+import json::Json;
+
+int main(void)
+{
+    JsonDoc *d;
+    JsonNode *o;
+    JsonNode *a;
+    char *out;
+    char *name;
+
+    d = "{\"name\":\"ct\",\"version\":\"0.20.3\",\"stable\":true,\"tags\":[\"c\",\"json\"]}".toDoc();
+    if (!d) {
+        printf("json: parse failed\n");
+        return 1;
+    }
+
+    name = d.root().childByKey("name").stringValue();
+    printf("name: %s\n", name);
+    printf("stable: %d\n", d.root().childByKey("stable").boolValue());
+    printf("tags: %d\n", d.root().childByKey("tags").childCount());
+    printf("offset: %d\n", d.errorOffset());
+
+    out = d.write(0);
+    printf("compact: %s\n", out);
+    d.drop();
+
+    o = json::Lib.newObject().put("ok", json::Lib.newBool(1));
+    a = json::Lib.newArray().append(json::Lib.newNumber(1));
+    a.append(json::Lib.newString("two"));
+    o.put("items", a);
+
+    d = json::Lib.newDoc().setRoot(o);
+    printf("built: %s\n", d.write(0));
+    d.drop();
+    return 0;
+}

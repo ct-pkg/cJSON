@@ -1,0 +1,235 @@
+/*
+ * serialize.ct - the rendering contract.
+ *
+ * cJSON renders numbers with `%1.15g`, so a value with more than 15
+ * significant digits comes back in scientific notation; that ceiling is
+ * asserted here instead of being claimed away. `write(0)` matches cJSON's
+ * unformatted output exactly, `write(1)` its tab-indented output.
+ *
+ * License: MIT (see LICENSE).
+ */
+
+#include <stdio.h>
+
+import json::JsonTypes;
+import json::Json;
+import std::str::String;
+
+int passed = 0;
+int failed = 0;
+
+void check(int cond, const char *name)
+{
+    if (cond) {
+        passed = passed + 1;
+    } else {
+        failed = failed + 1;
+        printf("FAIL %s\n", name);
+    }
+}
+
+/* C4.1: structural equality - kind, key, value, order and nesting. */
+int same_node(JsonNode *x, JsonNode *y)
+{
+    int i;
+    int n;
+    JsonNode *a;
+    JsonNode *b;
+
+    if (x == 0 || y == 0) {
+        return x == 0 && y == 0;
+    }
+    if (x.kind() != y.kind()) {
+        return 0;
+    }
+    if (x.key() == 0 || y.key() == 0) {
+        if (x.key() != 0 || y.key() != 0) {
+            return 0;
+        }
+    } else if (x.key().compare(y.key()) != 0) {
+        return 0;
+    }
+    if (x.isBool() == 1 && x.boolValue() != y.boolValue()) {
+        return 0;
+    }
+    if (x.isNumber() == 1 && x.numberValue() != y.numberValue()) {
+        return 0;
+    }
+    if (x.isString() == 1 && x.stringValue().compare(y.stringValue()) != 0) {
+        return 0;
+    }
+    n = x.childCount();
+    if (n != y.childCount()) {
+        return 0;
+    }
+    a = x.firstChild();
+    b = y.firstChild();
+    for (i = 0; i < n; i = i + 1) {
+        if (same_node(a, b) == 0) {
+            return 0;
+        }
+        a = a.nextSibling();
+        b = b.nextSibling();
+    }
+    return 1;
+}
+
+int main(void)
+{
+    JsonDoc *d;
+    JsonDoc *e;
+    JsonNode *o;
+    char buf[128];
+    char *bp;
+    int n;
+
+    /* compact output keeps member order and adds no space */
+    d = "{\"a\":1,\"b\":[true,null],\"c\":\"x\"}".toDoc();
+    check(d != 0, "parse for rendering");
+    check(d.write(0).compare("{\"a\":1,\"b\":[true,null],\"c\":\"x\"}") == 0,
+          "write(0) is compact and ordered");
+    check(d.write(1).compare("{\n\t\"a\":\t1,\n\t\"b\":\t[true, null],\n\t\"c\":\t\"x\"\n}") == 0,
+          "write(1) is the tab-indented form");
+    d.drop();
+
+    /* C4.1: parse -> writeBuf -> parse, compared node by node */
+    d = "{\"a\":1,\"b\":[true,null,3.5],\"c\":{\"d\":\"x\\u00e9\",\"e\":[]}}".toDoc();
+    check(d != 0, "C4.1 source parses");
+    n = d.writeBuf(buf, 128, 0);
+    check(n > 0 && n < 128, "C4.1 the rendered text fits the buffer");
+    bp = buf;
+    e = bp.toDoc();
+    check(e != 0, "C4.1 the rendered text re-parses");
+    if (e != 0) {
+        check(same_node(d.root(), e.root()) == 1,
+              "C4.1 round-trip is structurally identical");
+        e.drop();
+    }
+    d.drop();
+
+    /* empty containers and top-level scalars */
+    d = "[]".toDoc();
+    check(d.write(0).compare("[]") == 0, "empty array renders as []");
+    check(d.write(1).compare("[]") == 0, "empty array has no indent body");
+    d.drop();
+
+    d = "{}".toDoc();
+    check(d.write(0).compare("{}") == 0, "empty object renders as {}");
+    check(d.write(1).compare("{\n}") == 0, "empty object pretty-prints on two lines");
+    d.drop();
+
+    d = "null".toDoc();
+    check(d.write(0).compare("null") == 0, "top-level null");
+    d.drop();
+
+    d = "true".toDoc();
+    check(d.write(0).compare("true") == 0, "top-level true");
+    d.drop();
+
+    d = "\"x\"".toDoc();
+    check(d.write(0).compare("\"x\"") == 0, "top-level string keeps its quotes");
+    d.drop();
+
+    /* numbers: cJSON normalises the spelling */
+    d = "1.0".toDoc();
+    check(d.write(0).compare("1") == 0, "1.0 renders as 1");
+    d.drop();
+
+    d = "1E+2".toDoc();
+    check(d.write(0).compare("100") == 0, "1E+2 renders as 100");
+    d.drop();
+
+    d = "3.5".toDoc();
+    check(d.write(0).compare("3.5") == 0, "3.5 keeps its fraction");
+    d.drop();
+
+    d = "-0".toDoc();
+    check(d.write(0).compare("0") == 0, "-0 renders as 0");
+    d.drop();
+
+    d = "1e15".toDoc();
+    check(d.write(0).compare("1e+15") == 0, "1e15 keeps scientific notation");
+    d.drop();
+
+    d = "9007199254740991".toDoc();
+    check(d.write(0).compare("9.00719925474099e+15") == 0,
+          "2^53-1 hits the 15-significant-digit ceiling");
+    d.drop();
+
+    /* C4.3: non-ASCII passes through as raw UTF-8, not as \u escapes */
+    d = "\"\\u00e9\"".toDoc();
+    buf[0] = '"';
+    buf[1] = (char)195;
+    buf[2] = (char)169;
+    buf[3] = '"';
+    buf[4] = 0;
+    check(d != 0 && d.write(0).compare(buf) == 0,
+          "C4.3 non-ASCII is emitted as raw UTF-8");
+    d.drop();
+
+    /* strings are re-escaped on the way out */
+    d = "\"a\\u0001b\"".toDoc();
+    check(d != 0, "escaped control byte parses");
+    check(d.write(0).compare("\"a\\u0001b\"") == 0, "control byte is escaped on output");
+    d.drop();
+
+    d = "\"a\\/b\"".toDoc();
+    check(d.write(0).compare("\"a/b\"") == 0, "an escaped slash is written back bare");
+    d.drop();
+
+    /* writeBuf: full length back, cap-1 bytes plus NUL written */
+    d = "{\"a\":1}".toDoc();
+    n = d.writeBuf(buf, 128, 0);
+    check(n == 7, "writeBuf returns the untruncated length");
+    check(buf[0] == '{' && buf[1] == '"' && buf[6] == '}' && buf[7] == 0,
+          "writeBuf fills the whole buffer");
+    n = d.writeBuf(buf, 4, 0);
+    check(n == 7, "writeBuf still returns the untruncated length");
+    check(buf[0] == '{' && buf[1] == '"' && buf[2] == 'a' && buf[3] == 0,
+          "writeBuf truncates to cap minus one and terminates");
+    /* C4.6: cap 0 writes nothing; cap need+1 writes everything */
+    buf[0] = 'X';
+    n = d.writeBuf(buf, 0, 0);
+    check(n == 7 && buf[0] == 'X', "C4.6 cap 0 writes nothing and returns the length");
+    buf[0] = 0;
+    n = d.writeBuf(buf, 8, 0);
+    check(n == 7 && buf[6] == '}' && buf[7] == 0,
+          "C4.6 cap need+1 writes the text and the terminator");
+    /* C4.9: the tree is still readable after a write */
+    check(d.write(1) != 0, "C4.9 a second write succeeds");
+    check(d.root().childCount() == 1 && d.root().childByKey("a").numberValue() == 1.0,
+          "C4.9 the tree is still readable after write");
+    d.drop();
+
+    /* rendering a tree that came from builders */
+    o = json::Lib.newObject().put("n", json::Lib.newNumber(2));
+    o.put("t", json::Lib.newBool(0));
+    d = json::Lib.newDoc().setRoot(o);
+    check(d.write(0).compare("{\"n\":2,\"t\":false}") == 0, "a built tree renders");
+    d.drop();
+
+    /* C5.1: a built tree renders, re-parses and keeps its members */
+    o = json::Lib.newObject().put("id", json::Lib.newNumber(7));
+    o.put("ok", json::Lib.newBool(1));
+    d = json::Lib.newDoc().setRoot(o);
+    n = d.writeBuf(buf, 128, 0);
+    bp = buf;
+    e = bp.toDoc();
+    check(n > 0 && e != 0, "C5.1 a built tree renders and re-parses");
+    if (e != 0) {
+        check(e.root().childByKey("id").numberValue() == 7.0 &&
+              e.root().childByKey("ok").boolValue() == 1,
+              "C5.1 the re-parsed tree keeps its members");
+        e.drop();
+    }
+    d.drop();
+
+    /* no root: write and writeBuf both report failure */
+    d = json::Lib.newDoc();
+    check(d.write(0) == 0, "write without a root returns 0");
+    check(d.writeBuf(buf, 8, 0) == -1, "writeBuf without a root returns -1");
+    d.drop();
+
+    printf("SUMMARY passed=%d failed=%d\n", passed, failed);
+    return failed == 0 ? 0 : 1;
+}

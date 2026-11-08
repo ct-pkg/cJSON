@@ -1,0 +1,135 @@
+/*
+ * mem.ct - the executable side of C6.2 / C6.3 / C6.5, plus C4.10 and C4.11.
+ *
+ *   mem fail    <n>   n failed parses, each doc dropped
+ *   mem ok      <n>   n successful parses, each doc dropped
+ *   mem todoc   <n>   n `sample().toDoc()` + drop rounds
+ *   mem write   <n>   n parse + compact render + pretty render + drop rounds
+ *   mem setroot <n>   n built trees handed to one doc via setRoot (old tree freed)
+ *
+ * tests/mem.sh runs each mode at n=1000 and n=10000 and judges the delta in
+ * `maximum resident set size`. The input is deliberately non-trivial so a
+ * per-iteration leak accumulates linearly with n.
+ *
+ * License: MIT (see LICENSE).
+ */
+
+#include <stdio.h>
+
+import json::JsonTypes;
+import json::Json;
+import std::str::String;
+
+char *sample(void)
+{
+    return "{\"id\":123,\"name\":\"sample\",\"ok\":true,\"nil\":null,"
+           "\"tags\":[\"a\",\"b\",\"c\",\"d\"],"
+           "\"nested\":{\"x\":[1,2,3,4,5,6,7,8,9,10],"
+           "\"y\":{\"deep\":[true,false,null,\"z\"]}},"
+           "\"list\":[{\"k\":1},{\"k\":2},{\"k\":3}]}";
+}
+
+char *bad(void)
+{
+    return "{\"a\":1,\"a\":2}";
+}
+
+int main(int argc, char **argv)
+{
+    int i;
+    int k;
+    int n;
+    int fail_mode;
+    int ok_mode;
+    int todoc_mode;
+    int write_mode;
+    int setroot_mode;
+    JsonDoc *d;
+    JsonNode *o;
+    JsonNode *a;
+
+    if (argc < 3) {
+        printf("usage: mem fail|ok|todoc|write|setroot <iterations>\n");
+        return 2;
+    }
+    fail_mode = argv[1].compare("fail") == 0;
+    ok_mode = argv[1].compare("ok") == 0;
+    todoc_mode = argv[1].compare("todoc") == 0;
+    write_mode = argv[1].compare("write") == 0;
+    setroot_mode = argv[1].compare("setroot") == 0;
+    if (fail_mode == 0 && ok_mode == 0 && todoc_mode == 0 &&
+        write_mode == 0 && setroot_mode == 0) {
+        printf("usage: mem fail|ok|todoc|write|setroot <iterations>\n");
+        return 2;
+    }
+    n = argv[2].toInt();
+    if (n <= 0) {
+        printf("iterations must be positive\n");
+        return 2;
+    }
+
+    if (setroot_mode != 0) {
+        d = json::Lib.newDoc();
+    }
+
+    for (i = 0; i < n; i = i + 1) {
+        if (fail_mode != 0) {
+            d = json::Lib.newDoc();
+            if (d.parse(bad()) == JSON_OK) {
+                printf("the duplicate-key input unexpectedly parsed\n");
+                d.drop();
+                return 3;
+            }
+            d.drop();
+        } else if (ok_mode != 0) {
+            d = json::Lib.newDoc();
+            if (d.parse(sample()) != JSON_OK) {
+                printf("the sample document failed to parse\n");
+                d.drop();
+                return 3;
+            }
+            d.drop();
+        } else if (todoc_mode != 0) {
+            d = sample().toDoc();
+            if (d == 0) {
+                printf("toDoc returned 0\n");
+                return 3;
+            }
+            d.drop();
+        } else if (write_mode != 0) {
+            d = sample().toDoc();
+            if (d == 0) {
+                printf("toDoc returned 0\n");
+                return 3;
+            }
+            if (d.write(0) == 0 || d.write(1) == 0) {
+                printf("write returned 0\n");
+                d.drop();
+                return 3;
+            }
+            d.drop();
+        } else {
+            /* C4.11: each setRoot frees the tree installed by the previous one */
+            a = json::Lib.newArray();
+            for (k = 0; k < 12; k = k + 1) {
+                a.append(json::Lib.newNumber(k));
+            }
+            o = json::Lib.newObject();
+            o.put("list", a);
+            o.put("name", json::Lib.newString("setroot"));
+            o.put("ok", json::Lib.newBool(1));
+            if (d.setRoot(o) != d) {
+                printf("setRoot did not return the receiver\n");
+                d.drop();
+                return 3;
+            }
+        }
+    }
+
+    if (setroot_mode != 0) {
+        d.drop();
+    }
+
+    printf("done %s %d\n", argv[1], n);
+    return 0;
+}

@@ -1,0 +1,142 @@
+/*
+ * Json - JSON text <-> tree, mapped onto vendored cJSON 1.7.19.
+ *
+ * The public surface names two handles and never a C type:
+ *
+ *   JsonNode *  a value in the tree
+ *   JsonDoc  *  an owner of one tree, plus the parse limits and the error
+ *
+ * Every configuration method returns the receiver, and every builder returns
+ * the node, so both the setup chain and the build chain stay on one line:
+ *
+ *   d.setMaxDepth(64).setMaxNodes(100000).parse(text);
+ *   json::Lib.newObject().put("k", json::Lib.newNumber(1));
+ *
+ * Ownership: a doc owns its tree exclusively; every `JsonNode *` the package
+ * hands out is borrowed and lives until the owning doc is dropped. `drop()`
+ * exists only on `JsonDoc *` and is single use.
+ */
+namespace json;
+
+pub type JsonNode = struct cJSON;
+pub type JsonDoc = struct ct_json_doc;
+
+pub trait Node {
+    int kind();
+    int isNull();
+    int isBool();
+    int isNumber();
+    int isString();
+    int isArray();
+    int isObject();
+
+    int boolValue();
+    double numberValue();
+    int numberInt64(long long *out);
+    char *stringValue();
+    char *key();
+
+    int childCount();
+    JsonNode *firstChild();
+    JsonNode *nextSibling();
+    JsonNode *childAt(int index);
+    JsonNode *childByKey(const char *key);
+
+    JsonNode *put(const char *key, JsonNode *child);
+    JsonNode *append(JsonNode *child);
+}
+
+pub trait Doc {
+    JsonDoc *setMaxDepth(int n);
+    JsonDoc *setMaxNodes(int n);
+    JsonDoc *setMaxString(int n);
+    JsonDoc *setMaxInput(int n);
+
+    int parse(const char *text);
+    JsonNode *root();
+    JsonDoc *setRoot(JsonNode *root);
+
+    char *write(int format);
+    int writeBuf(char *out, int cap, int format);
+
+    int error();
+    int errorOffset();
+    int errorLine();
+    int errorCol();
+
+    void drop();
+}
+
+pub trait Lib {
+    JsonDoc *newDoc();
+    JsonNode *newNull();
+    JsonNode *newBool(int v);
+    JsonNode *newNumber(double v);
+    JsonNode *newString(const char *s);
+    JsonNode *newArray();
+    JsonNode *newObject();
+}
+
+pub trait Text {
+    JsonDoc *toDoc();
+}
+
+map trait Node for type JsonNode * {
+    kind(n) -> ct_json_node_kind(n);
+    isNull(n) -> ct_json_node_is_null(n);
+    isBool(n) -> ct_json_node_is_bool(n);
+    isNumber(n) -> ct_json_node_is_number(n);
+    isString(n) -> ct_json_node_is_string(n);
+    isArray(n) -> ct_json_node_is_array(n);
+    isObject(n) -> ct_json_node_is_object(n);
+
+    boolValue(n) -> ct_json_node_bool(n);
+    numberValue(n) -> ct_json_node_number(n);
+    numberInt64(n, out) -> ct_json_node_int64(n, out);
+    stringValue(n) -> ct_json_node_string(n);
+    key(n) -> ct_json_node_key(n);
+
+    childCount(n) -> ct_json_node_count(n);
+    firstChild(n) -> ct_json_node_first_child(n);
+    nextSibling(n) -> ct_json_node_next_sibling(n);
+    childAt(n, i) -> ct_json_node_child_at(n, i);
+    childByKey(n, k) -> ct_json_node_child_by_key(n, k);
+
+    put(n, k, c) -> ct_json_node_put(n, k, c);
+    append(n, c) -> ct_json_node_append(n, c);
+}
+
+map trait Doc for type JsonDoc * {
+    setMaxDepth(d, n) -> ct_json_doc_set_max_depth(d, n);
+    setMaxNodes(d, n) -> ct_json_doc_set_max_nodes(d, n);
+    setMaxString(d, n) -> ct_json_doc_set_max_string(d, n);
+    setMaxInput(d, n) -> ct_json_doc_set_max_input(d, n);
+
+    parse(d, t) -> ct_json_doc_parse(d, t);
+    root(d) -> ct_json_doc_root(d);
+    setRoot(d, r) -> ct_json_doc_set_root(d, r);
+
+    write(d, f) -> ct_json_doc_write(d, f);
+    writeBuf(d, o, c, f) -> ct_json_doc_write_buf(d, o, c, f);
+
+    error(d) -> ct_json_doc_error(d);
+    errorOffset(d) -> ct_json_doc_error_offset(d);
+    errorLine(d) -> ct_json_doc_error_line(d);
+    errorCol(d) -> ct_json_doc_error_col(d);
+
+    drop(d) -> ct_json_doc_free(d);
+}
+
+map trait Lib for namespace json {
+    newDoc() -> ct_json_doc_new();
+    newNull() -> ct_json_new_null();
+    newBool(v) -> ct_json_new_bool(v);
+    newNumber(v) -> ct_json_new_number(v);
+    newString(s) -> ct_json_new_string(s);
+    newArray() -> ct_json_new_array();
+    newObject() -> ct_json_new_object();
+}
+
+map trait Text for type char * {
+    toDoc(s) -> ct_json_text_to_doc(s);
+}

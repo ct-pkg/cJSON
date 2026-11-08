@@ -1,0 +1,35 @@
+/*
+ * compile_fail/temp_receiver.ct - the one chain shape ct v0.20.3 rejects.
+ *
+ * This file MUST FAIL to compile, with:
+ *
+ *   a method call on a temporary is only allowed at the start of a statement
+ *   or of an assignment
+ *
+ * A function call as the root of a chain inside a larger expression needs a
+ * compiler-generated temporary, and a temporary may only open a statement or
+ * an assignment. The legal rewrite binds first:
+ *
+ *   d = text().toDoc();
+ *   printf("%d\n", d.root().kind());
+ *
+ * tests/run.sh asserts both the failure and the message, so the limit stays
+ * measured rather than remembered. Do not "fix" this file.
+ *
+ * License: MIT (see LICENSE).
+ */
+
+#include <stdio.h>
+
+import json::Json;
+
+char *text(void)
+{
+    return "{\"a\":[1,2]}";
+}
+
+int main(void)
+{
+    printf("case=%d\n", text().toDoc().root().kind());
+    return 0;
+}

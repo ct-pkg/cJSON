@@ -1,0 +1,38 @@
+/*
+ * JsonTypes - the enumerations the CT side compares against.
+ *
+ * Only enums live here: a `.m.ct` cannot declare an enum, and a consumer that
+ * imports only `json::Json` does not see these constants. Import both units.
+ */
+namespace json;
+
+/*
+ * Node kinds. The values are cJSON's bit flags (`JSON_NULL` is 4, not 0),
+ * which is why `kind()` can hand the masked type straight back.
+ */
+pub enum JsonKind {
+    JSON_UNDEFINED = 0,
+    JSON_FALSE     = 1,
+    JSON_TRUE      = 2,
+    JSON_NULL      = 4,
+    JSON_NUMBER    = 8,
+    JSON_STRING    = 16,
+    JSON_ARRAY     = 32,
+    JSON_OBJECT    = 64,
+    JSON_RAW       = 128
+}
+
+/*
+ * Status codes. `parse` returns one of these; the strict validator produces
+ * every `[strict]` one with an exact byte offset.
+ */
+pub enum JsonStatus {
+    JSON_OK            = 0,
+    JSON_ERR_SYNTAX    = -1,
+    JSON_ERR_DUP_KEY   = -2,
+    JSON_ERR_NONFINITE = -3,
+    JSON_ERR_LIMIT     = -4,
+    JSON_ERR_UTF8      = -5,
+    JSON_ERR_CONTROL   = -6,
+    JSON_ERR_BOM       = -7
+}

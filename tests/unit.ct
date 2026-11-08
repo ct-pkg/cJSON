@@ -1,0 +1,434 @@
+/*
+ * unit.ct - the json package's repeatable suite: positives, the strict
+ * negatives (status code plus exact line:col), the limits and the positions.
+ *
+ * Run through tests/run.sh, which requires `SUMMARY passed=N failed=0` and a
+ * warning-free build.
+ *
+ * License: MIT (see LICENSE).
+ */
+
+#include <stdio.h>
+
+import json::JsonTypes;
+import json::Json;
+import std::str::String;
+
+int passed = 0;
+int failed = 0;
+
+void check(int cond, const char *name)
+{
+    if (cond) {
+        passed = passed + 1;
+    } else {
+        failed = failed + 1;
+        printf("FAIL %s\n", name);
+    }
+}
+
+/* status, line and column in one assertion */
+void check_at(JsonDoc *d, int code, int line, int col, const char *name)
+{
+    int ok = d.error() == code && d.errorLine() == line && d.errorCol() == col;
+    if (!ok) {
+        failed = failed + 1;
+        printf("FAIL %s: got %d at %d:%d, want %d at %d:%d\n",
+               name, d.error(), d.errorLine(), d.errorCol(), code, line, col);
+        return;
+    }
+    passed = passed + 1;
+}
+
+/* parses `text` on a fresh doc, asserts the status, then frees the doc */
+void check_parse(const char *text, int code, const char *name)
+{
+    JsonDoc *d = json::Lib.newDoc();
+    int st = d.parse(text);
+    check(st == code, name);
+    if (code != JSON_OK && st != code) {
+        printf("  input: %s\n", text);
+    }
+    d.drop();
+}
+
+void check_neg(const char *text, int code, int line, int col, const char *name)
+{
+    JsonDoc *d = json::Lib.newDoc();
+    int st = d.parse(text);
+    check(st == code && d.root() == 0, name);
+    check_at(d, code, line, col, name);
+    d.drop();
+}
+
+static char big[300000];
+
+int main(void)
+{
+    JsonDoc *d;
+    JsonNode *n;
+    JsonNode *a;
+    JsonNode *b;
+    int st;
+    int k;
+    int p;
+    long long ll;
+    double dv;
+    char buf[64];
+    char *bp;
+
+    /* ---------------- C2 parse positives ---------------- */
+
+    d = "{\"a\":1,\"b\":[true,false,null],\"c\":\"x\"}".toDoc();
+    check(d != 0, "toDoc on an object");
+    if (!d) {
+        printf("SUMMARY passed=%d failed=%d\n", passed, failed + 1);
+        return 1;
+    }
+    check(d.error() == JSON_OK, "clean parse has no error");
+    check(d.errorOffset() == -1, "clean parse leaves errorOffset at -1");
+
+    n = d.root();
+    check(n.kind() == JSON_OBJECT, "root kind is object");
+    check(n.isObject() == 1 && n.isArray() == 0, "isObject / isArray");
+    check(n.childCount() == 3, "object child count");
+
+    a = n.childByKey("a");
+    check(a != 0 && a.kind() == JSON_NUMBER, "childByKey number");
+    check(a.numberValue() == 1.0, "numberValue integer");
+    check(a.numberInt64(&ll) == 0 && ll == 1, "numberInt64 integer");
+    check(a.key() != 0 && a.key().len() == 1, "key() returns the member name");
+
+    a = n.childByKey("b");
+    check(a.kind() == JSON_ARRAY && a.childCount() == 3, "array of three");
+    check(a.childAt(0).kind() == JSON_TRUE, "childAt true");
+    check(a.childAt(1).kind() == JSON_FALSE, "childAt false");
+    check(a.childAt(2).kind() == JSON_NULL, "childAt null");
+    check(a.childAt(0).boolValue() == 1, "boolValue true");
+    check(a.childAt(1).boolValue() == 0, "boolValue false");
+    check(a.childAt(9) == 0, "childAt out of range is 0");
+
+    b = a.firstChild();
+    check(b != 0 && b.nextSibling() != 0 && b.nextSibling().nextSibling() != 0,
+          "firstChild / nextSibling walk");
+    check(b.nextSibling().nextSibling().nextSibling() == 0, "walk ends at 0");
+    check(b.key() == 0, "array element has no key");
+    check(b.nextSibling().isBool() == 1, "nextSibling is bool");
+
+    a = n.childByKey("c");
+    check(a.kind() == JSON_STRING && a.stringValue().len() == 1, "stringValue length");
+    check(a.stringValue().compare("x") == 0, "stringValue content");
+
+    /* traversal equals indexing */
+    p = 0;
+    b = d.root().firstChild();
+    while (b != 0) {
+        check(b.childCount() == d.root().childAt(p).childCount(), "traversal == childAt");
+        b = b.nextSibling();
+        p = p + 1;
+    }
+    check(p == 3, "traversal covered every member");
+    d.drop();
+
+    /* scalars at the top level */
+    d = "null".toDoc();
+    check(d != 0 && d.root().kind() == JSON_NULL && d.root().isNull() == 1, "top-level null");
+    d.drop();
+
+    d = " true ".toDoc();
+    check(d != 0 && d.root().kind() == JSON_TRUE, "top-level true with spaces");
+    d.drop();
+
+    d = "-0".toDoc();
+    check(d != 0 && d.root().numberInt64(&ll) == 0 && ll == 0, "-0 reads as 0");
+    d.drop();
+
+    d = "9007199254740991".toDoc();
+    check(d != 0 && d.root().numberInt64(&ll) == 0 && d.root().numberValue() == 9007199254740991.0,
+          "2^53-1 reads exactly");
+    d.drop();
+
+    d = "-17".toDoc();
+    check(d != 0 && d.root().numberInt64(&ll) == 0 && ll == -17, "negative integer");
+    d.drop();
+
+    d = "3.5".toDoc();
+    dv = d.root().numberValue();
+    check(d != 0 && dv > 3.4999 && dv < 3.5001, "3.5");
+    check(d.root().numberInt64(&ll) == -1, "numberInt64 rejects a fraction");
+    d.drop();
+
+    d = "-2.25e3".toDoc();
+    dv = d.root().numberValue();
+    check(d != 0 && dv > -2250.01 && dv < -2249.99, "-2.25e3");
+    d.drop();
+
+    d = "1E+2".toDoc();
+    dv = d.root().numberValue();
+    check(d != 0 && dv > 99.99 && dv < 100.01, "1E+2");
+    d.drop();
+
+    d = "\"\"".toDoc();
+    check(d != 0 && d.root().kind() == JSON_STRING && d.root().stringValue().len() == 0,
+          "empty string");
+    d.drop();
+
+    d = "\"a\\\"b\\\\c\\/d\\be\\ff\\ng\\rh\\ti\"".toDoc();
+    check(d != 0, "all simple escapes parse");
+    check(d.root().stringValue().compare("a\"b\\c/d\be\ff\ng\rh\ti") == 0,
+          "simple escapes decode");
+    d.drop();
+
+    d = "\"\\u0041\\u00e9\"".toDoc();
+    check(d != 0 && d.root().stringValue().len() == 3, "\\u0041\\u00e9 is 3 bytes");
+    buf[0] = 'A';
+    buf[1] = (char)195;
+    buf[2] = (char)169;
+    buf[3] = 0;
+    check(d != 0 && d.root().stringValue().compare(buf) == 0, "\\u escapes decode to UTF-8");
+    d.drop();
+
+    d = "\"\\uD83D\\uDE00\"".toDoc();
+    check(d != 0 && d.root().stringValue().len() == 4, "surrogate pair is 4 bytes");
+    d.drop();
+
+    d = "[]".toDoc();
+    check(d != 0 && d.root().childCount() == 0 && d.root().firstChild() == 0, "empty array");
+    d.drop();
+
+    d = "{}".toDoc();
+    check(d != 0 && d.root().isObject() == 1 && d.root().childCount() == 0, "empty object");
+    d.drop();
+
+    d = "{\"\":1}".toDoc();
+    check(d != 0 && d.root().childByKey("").numberInt64(&ll) == 0 && ll == 1, "empty key");
+    d.drop();
+
+    d = " \t\r\n{\"a\":1} ".toDoc();
+    check(d != 0 && d.root().childByKey("a") != 0, "surrounding whitespace");
+    d.drop();
+
+    /* 64 levels is the default ceiling */
+    for (k = 0; k < 64; k++) {
+        big[k] = '[';
+    }
+    big[64] = '0';
+    for (k = 0; k < 64; k++) {
+        big[65 + k] = ']';
+    }
+    big[129] = 0;
+    bp = big;
+    d = bp.toDoc();
+    check(d != 0, "64 nested arrays");
+    d.drop();
+
+    /* ---------------- C3 strict negatives ---------------- */
+
+    check_parse("", JSON_ERR_SYNTAX, "empty input");
+    check_neg("{", JSON_ERR_SYNTAX, 1, 2, "unclosed object");
+    check_neg("{\"a\":1,}", JSON_ERR_SYNTAX, 1, 8, "trailing comma in object");
+    check_neg("[1,]", JSON_ERR_SYNTAX, 1, 4, "trailing comma in array");
+    check_neg("[1 2]", JSON_ERR_SYNTAX, 1, 4, "missing comma in array");
+    check_neg("\"unterminated", JSON_ERR_SYNTAX, 1, 1, "unterminated string");
+    check_neg("\"bad\\q\"", JSON_ERR_SYNTAX, 1, 5, "unknown escape");
+    check_neg("\"\\u12\"", JSON_ERR_SYNTAX, 1, 2, "short \\u escape");
+    check_neg("\"\\uD800\"", JSON_ERR_SYNTAX, 1, 2, "lone high surrogate");
+    check_neg("\"\\uDC00\"", JSON_ERR_SYNTAX, 1, 2, "lone low surrogate");
+    check_neg("01", JSON_ERR_SYNTAX, 1, 2, "leading zero");
+    check_neg("1.", JSON_ERR_SYNTAX, 1, 3, "trailing decimal point");
+    check_neg(".5", JSON_ERR_SYNTAX, 1, 1, "leading decimal point");
+    check_neg("+1", JSON_ERR_SYNTAX, 1, 1, "leading plus");
+    check_neg("NaN", JSON_ERR_SYNTAX, 1, 1, "NaN is not JSON");
+    check_neg("Infinity", JSON_ERR_SYNTAX, 1, 1, "Infinity is not JSON");
+    check_neg("1e999", JSON_ERR_NONFINITE, 1, 1, "overflowing exponent");
+    check_neg("-1e999", JSON_ERR_NONFINITE, 1, 1, "negative overflowing exponent");
+    check_neg("{\"a\":1,\"a\":2}", JSON_ERR_DUP_KEY, 1, 8, "duplicate key");
+    check_neg("{\"a\":1,\"\\u0061\":2}", JSON_ERR_DUP_KEY, 1, 8, "duplicate through an escape");
+    check_neg("{\"a\":{\"b\":1,\"b\":2}}", JSON_ERR_DUP_KEY, 1, 13, "duplicate in a nested object");
+    check_neg("{a:1}", JSON_ERR_SYNTAX, 1, 2, "unquoted key");
+    check_neg("[1,2", JSON_ERR_SYNTAX, 1, 5, "unclosed array");
+    check_neg("{\"a\" 1}", JSON_ERR_SYNTAX, 1, 6, "missing colon");
+    check_neg("{\"a\":1}xyz", JSON_ERR_SYNTAX, 1, 8, "trailing garbage");
+
+    /* \u0000 is valid RFC 8259 but cannot live in a char*; reject it */
+    check_neg("\"a\\u0000b\"", JSON_ERR_CONTROL, 1, 3, "\\u0000 in a value");
+    check_neg("{\"a\\u0000b\":1,\"a\":2}", JSON_ERR_CONTROL, 1, 4, "\\u0000 in a key");
+
+    /* raw control byte 0x01 inside a string */
+    d = json::Lib.newDoc();
+    buf[0] = '{';
+    buf[1] = '"';
+    buf[2] = 's';
+    buf[3] = '"';
+    buf[4] = ':';
+    buf[5] = '"';
+    buf[6] = (char)1;
+    buf[7] = '"';
+    buf[8] = '}';
+    buf[9] = 0;
+    st = d.parse(buf);
+    check(st == JSON_ERR_CONTROL, "raw control byte rejected");
+    check_at(d, JSON_ERR_CONTROL, 1, 7, "raw control byte position");
+    d.drop();
+
+    /* lone 0xFF is not UTF-8 */
+    d = json::Lib.newDoc();
+    buf[0] = '"';
+    buf[1] = (char)255;
+    buf[2] = '"';
+    buf[3] = 0;
+    st = d.parse(buf);
+    check(st == JSON_ERR_UTF8, "0xFF rejected as UTF-8");
+    check_at(d, JSON_ERR_UTF8, 1, 2, "0xFF position");
+    d.drop();
+
+    /* overlong two-byte form C0 80 */
+    d = json::Lib.newDoc();
+    buf[0] = '"';
+    buf[1] = (char)192;
+    buf[2] = (char)128;
+    buf[3] = '"';
+    buf[4] = 0;
+    st = d.parse(buf);
+    check(st == JSON_ERR_UTF8, "overlong UTF-8 rejected");
+    d.drop();
+
+    /* a UTF-8 BOM is not whitespace */
+    d = json::Lib.newDoc();
+    buf[0] = (char)239;
+    buf[1] = (char)187;
+    buf[2] = (char)191;
+    buf[3] = '1';
+    buf[4] = 0;
+    st = d.parse(buf);
+    check(st == JSON_ERR_BOM, "BOM rejected");
+    check_at(d, JSON_ERR_BOM, 1, 1, "BOM position");
+    d.drop();
+
+    /* ---------------- C7 positions across lines ---------------- */
+
+    d = json::Lib.newDoc();
+    st = d.parse("{\n  \"a\": 1,\n  \"b\" 2\n}");
+    check(st == JSON_ERR_SYNTAX, "multi-line syntax error");
+    check_at(d, JSON_ERR_SYNTAX, 3, 7, "multi-line position");
+    check(d.errorOffset() == 18, "errorOffset is the byte offset");
+    d.drop();
+
+    /* C7.5: two consecutive failures each keep their own position */
+    d = json::Lib.newDoc();
+    check(d.parse("{\"a\":1,\"a\":2}") == JSON_ERR_DUP_KEY, "C7.5 first parse fails");
+    check_at(d, JSON_ERR_DUP_KEY, 1, 8, "C7.5 first position");
+    check(d.parse("[1,]") == JSON_ERR_SYNTAX, "C7.5 second parse fails");
+    check_at(d, JSON_ERR_SYNTAX, 1, 4, "C7.5 second position is its own");
+    d.drop();
+
+    /* ---------------- C8 limits ---------------- */
+
+    d = json::Lib.newDoc();
+    check(d.setMaxDepth(1).parse("[1]") == JSON_OK, "maxDepth 1 allows one level");
+    check(d.setMaxDepth(1).parse("[[1]]") == JSON_ERR_LIMIT, "maxDepth 1 rejects two levels");
+    check_at(d, JSON_ERR_LIMIT, 1, 2, "maxDepth position");
+    d.drop();
+
+    d = json::Lib.newDoc();
+    check(d.setMaxNodes(1).parse("[]") == JSON_OK, "maxNodes 1 allows an empty array");
+    check(d.setMaxNodes(1).parse("[1]") == JSON_ERR_LIMIT, "maxNodes 1 rejects one element");
+    check_at(d, JSON_ERR_LIMIT, 1, 2, "maxNodes position");
+    check(d.setMaxNodes(1).parse("{\"a\":1}") == JSON_ERR_LIMIT,
+          "maxNodes 1 rejects a one-member object");
+    check_at(d, JSON_ERR_LIMIT, 1, 6, "maxNodes object position");
+    d.drop();
+
+    d = json::Lib.newDoc();
+    check(d.setMaxString(3).parse("\"abc\"") == JSON_OK, "maxString 3 allows three bytes");
+    check(d.setMaxString(3).parse("\"abcd\"") == JSON_ERR_LIMIT, "maxString 3 rejects four bytes");
+    check_at(d, JSON_ERR_LIMIT, 1, 5, "maxString position");
+    d.drop();
+
+    d = json::Lib.newDoc();
+    check(d.setMaxString(1).parse("\"\\u00e9\"") == JSON_ERR_LIMIT, "maxString counts decoded bytes");
+    check_at(d, JSON_ERR_LIMIT, 1, 2, "maxString position in an escape");
+    d.drop();
+
+    d = json::Lib.newDoc();
+    check(d.setMaxInput(4).parse("123") == JSON_OK, "maxInput 4 allows three bytes");
+    check(d.setMaxInput(4).parse("12345") == JSON_ERR_LIMIT, "maxInput 4 rejects five bytes");
+    check_at(d, JSON_ERR_LIMIT, 1, 1, "maxInput position");
+    d.drop();
+
+    d = json::Lib.newDoc();
+    check(d.setMaxNodes(0).setMaxDepth(0).setMaxString(0).setMaxInput(0) == d,
+          "non-positive limits leave the doc unchanged");
+    check(d.parse("[1,2,3]") == JSON_OK, "doc still parses after ignored limits");
+    check(d.setMaxDepth(1000).parse("[1]") == JSON_OK, "over-large maxDepth is clamped");
+    d.drop();
+
+    /* node ceiling: root + every element, keys are not nodes */
+    big[0] = '[';
+    for (k = 0; k < 99999; k++) {
+        big[1 + k * 2] = '0';
+        big[2 + k * 2] = (k == 99998) ? ']' : ',';
+    }
+    big[1 + 99999 * 2] = 0;
+    d = json::Lib.newDoc();
+    st = d.parse(big);
+    check(st == JSON_OK, "exactly 100000 nodes is allowed");
+    d.drop();
+
+    big[0] = '[';
+    for (k = 0; k < 100001; k++) {
+        big[1 + k * 2] = '0';
+        big[2 + k * 2] = (k == 100000) ? ']' : ',';
+    }
+    big[1 + 100001 * 2] = 0;
+    d = json::Lib.newDoc();
+    st = d.parse(big);
+    check(st == JSON_ERR_LIMIT, "100001 values hit the default node ceiling");
+    check_at(d, JSON_ERR_LIMIT, 1, 200000, "node ceiling position");
+    d.drop();
+
+    /* 65 levels of array hit the compile-time cap */
+    for (k = 0; k < 65; k++) {
+        big[k] = '[';
+    }
+    big[65] = '0';
+    for (k = 0; k < 65; k++) {
+        big[66 + k] = ']';
+    }
+    big[131] = 0;
+    d = json::Lib.newDoc();
+    st = d.parse(big);
+    check(st == JSON_ERR_LIMIT, "65 nested arrays rejected");
+    check_at(d, JSON_ERR_LIMIT, 1, 65, "65th bracket position");
+    d.drop();
+
+    /* C8.5: a larger maxDepth is clamped to the compile-time cap */
+    d = json::Lib.newDoc();
+    check(d.setMaxDepth(1000).parse(big) == JSON_ERR_LIMIT,
+          "maxDepth 1000 is still clamped to 64");
+    check_at(d, JSON_ERR_LIMIT, 1, 65, "clamped depth position");
+    d.drop();
+
+    /* ---------------- error state transitions ---------------- */
+
+    d = json::Lib.newDoc();
+    check(d.parse("{\"a\":1,\"a\":2}") == JSON_ERR_DUP_KEY, "first parse fails");
+    check(d.root() == 0, "failed parse leaves no root");
+    check(d.parse("{\"a\":1}") == JSON_OK, "second parse succeeds on the same doc");
+    check(d.error() == JSON_OK && d.errorOffset() == -1, "success clears the error state");
+    check(d.root().childByKey("a").numberValue() == 1.0, "second parse has the new tree");
+    d.drop();
+
+    /* toDoc must apply the same strictness */
+    d = "{\"a\":1,\"a\":2}".toDoc();
+    check(d == 0, "toDoc rejects duplicate keys");
+    d = "{\"a\":1}x".toDoc();
+    check(d == 0, "toDoc rejects trailing garbage");
+    d = json::Lib.newDoc();
+    check(d.parse(0) == JSON_ERR_SYNTAX, "null input is a syntax error");
+    check_at(d, JSON_ERR_SYNTAX, 1, 1, "null input position");
+    d.drop();
+
+    printf("SUMMARY passed=%d failed=%d\n", passed, failed);
+    return failed == 0 ? 0 : 1;
+}

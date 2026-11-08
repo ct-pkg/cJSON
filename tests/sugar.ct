@@ -1,0 +1,130 @@
+/*
+ * sugar.ct - the `char *` host and the std::str interop.
+ *
+ * `Text` hangs off `char *`, so a literal, a variable and a `char *` returned
+ * by another call all reach `toDoc()`. Values come back as borrowed `char *`
+ * and use the ordinary std::str::String methods, because the type key drops a
+ * top-level `const` and `json` never returns a NUL inside a value.
+ *
+ * License: MIT (see LICENSE).
+ */
+
+#include <stdio.h>
+
+import json::JsonTypes;
+import json::Json;
+import std::str::String;
+
+int passed = 0;
+int failed = 0;
+
+void check(int cond, const char *name)
+{
+    if (cond) {
+        passed = passed + 1;
+    } else {
+        failed = failed + 1;
+        printf("FAIL %s\n", name);
+    }
+}
+
+/* C1.6: a user function returning char * as the chain head. */
+char *payload(void)
+{
+    return "{\"call\":[2]}";
+}
+
+/* C10.3: a plain C struct whose field is a `char *`. */
+struct Holder {
+    char *raw;
+};
+
+int main(void)
+{
+    JsonDoc *d;
+    JsonNode *n;
+    char *text;
+    char *v;
+    char *out;
+    struct Holder h;
+    char *arr[2];
+    char bad[4];
+    char *bp;
+
+    /* literal receiver */
+    d = "{\"a\":1}".toDoc();
+    check(d != 0, "a literal reaches toDoc");
+    d.drop();
+
+    /* variable receiver */
+    text = "{\"a\":1}";
+    d = text.toDoc();
+    check(d != 0, "a char * variable reaches toDoc");
+    d.drop();
+
+    /* call-result receiver */
+    d = "{\"a\":1}".toDoc().setMaxDepth(8);
+    check(d != 0, "the doc returned by toDoc is a usable receiver");
+    d.drop();
+
+    /* C1.6: a user function returns char *, then .toDoc() opens the chain */
+    d = payload().toDoc();
+    check(d != 0 && d.root().childByKey("call").childCount() == 1,
+          "a function result reaches toDoc");
+    d.drop();
+
+    /* C10.3: a struct field and an array element are receivers too */
+    h.raw = "{\"y\":2}";
+    d = h.raw.toDoc();
+    check(d != 0 && d.root().childByKey("y").numberValue() == 2.0,
+          "a struct field reaches toDoc");
+    d.drop();
+
+    arr[0] = "{\"z\":3}";
+    d = arr[0].toDoc();
+    check(d != 0 && d.root().childByKey("z").numberValue() == 3.0,
+          "an array element reaches toDoc");
+    d.drop();
+
+    /* C10.6: toDoc runs the strict layer, so bad UTF-8 is rejected */
+    bad[0] = '"';
+    bad[1] = (char)255;
+    bad[2] = '"';
+    bad[3] = 0;
+    bp = bad;
+    d = bp.toDoc();
+    check(d == 0, "toDoc rejects invalid UTF-8");
+
+    /* rejects are 0, not a half-built doc */
+    d = "{\"a\":1}x".toDoc();
+    check(d == 0, "trailing garbage makes toDoc return 0");
+    d = "".toDoc();
+    check(d == 0, "an empty text makes toDoc return 0");
+
+    /* string values are borrowed char * and use the std methods */
+    d = "{\"s\":\"ct\",\"n\":\"a/b\"}".toDoc();
+    n = d.root().childByKey("s");
+    v = n.stringValue();
+    check(v != 0, "stringValue returns a char *");
+    check(v.len() == 2, "std::str len on a json value");
+    check(v.compare("ct") == 0, "std::str compare on a json value");
+    check(v.startsWith("c") == 1 && v.endsWith("t") == 1, "std::str prefix/suffix");
+    check(v.find("t") == 1, "std::str find");
+
+    v = d.root().childByKey("n").stringValue();
+    check(v.compare("a/b") == 0, "an escaped slash decodes before std sees it");
+
+    /* the rendered text is also a plain char * */
+    out = d.write(0);
+    check(out != 0 && out.len() > 0, "write returns a char *");
+    check(out.find("\"s\"") >= 0, "the rendered text contains its keys");
+    d.drop();
+
+    /* drop is the only release, and it frees the tree and the text */
+    d = "[]".toDoc();
+    d.drop();
+    passed = passed + 1;
+
+    printf("SUMMARY passed=%d failed=%d\n", passed, failed);
+    return failed == 0 ? 0 : 1;
+}
