@@ -6,6 +6,9 @@
  *   JsonNode *  a value in the tree
  *   JsonDoc  *  an owner of one tree, plus the parse limits and the error
  *
+ * `JsonNode` is the package's own `ct_json_node` handle (Json.shim.h owns the
+ * tag), so the vendored `cJSON` name never reaches this file or a signature.
+ *
  * Every configuration method returns the receiver, and every builder returns
  * the node, so both the setup chain and the build chain stay on one line:
  *
@@ -18,7 +21,7 @@
  */
 namespace json;
 
-pub type JsonNode = struct cJSON;
+pub type JsonNode = struct ct_json_node;
 pub type JsonDoc = struct ct_json_doc;
 
 pub trait Node {

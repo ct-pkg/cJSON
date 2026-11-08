@@ -333,14 +333,15 @@ d.drop();
 
 | 术语 | 含义 | 本包中的所指 |
 | --- | --- | --- |
-| 句柄（handle） | 一个不透明指针，调用方只通过方法操作它，不直接碰内部结构。 | `JsonDoc *` 与 `JsonNode *`；C 侧的 `struct ct_json_doc`、`struct cJSON` 不出包。 |
+| 句柄（handle） | 一个不透明指针，调用方只通过方法操作它，不直接碰内部结构。 | `JsonDoc *` 与 `JsonNode *`；两个 tag 都归本包（`struct ct_json_doc`、`struct ct_json_node`），vendored 的 `struct cJSON` 只在 shim 内部出现。 |
 | 宿主（host） | trait 方法挂靠的类型。 | 四个宿主：`JsonNode *`（`Node`）、`JsonDoc *`（`Doc`）、`namespace json`（`Lib`）、`char *`（`Text`）。 |
 | 映射（map trait） | 把 trait 方法绑定到宿主并转调 C 函数的声明。 | `Json.m.ct` 里的 `map trait Node for type JsonNode *` 等四段，每行转调一个 `ct_json_*` 函数。 |
 | 链式返回自身（return receiver） | 方法返回接收者本身，使下一次调用可以接在后面。 | `setMaxDepth` / `setMaxNodes` / `setMaxString` / `setMaxInput` / `setRoot` / `put` / `append` 都返回接收者。 |
 | 所有权（ownership） | 谁负责释放一块内存的约定。 | 只有 `JsonDoc` 拥有树；`drop()` 映射到 `ct_json_doc_free()`，对整棵树调用一次 `cJSON_Delete()`。 |
 | 借用（borrow） | 只取得指针的使用权，不承担释放责任。 | `root()`、`firstChild()`、`nextSibling()`、`childAt()`、`childByKey()`、`stringValue()`、`key()`、`write()` 返回的都是借用指针，有效期到所属 doc 被 `drop()`。 |
 | `JsonDoc` | 一棵 JSON 树及其解析状态的所有者。 | `Json.m.ct` 中 `pub type JsonDoc = struct ct_json_doc;`；由 `json::Lib.newDoc()` 或 `"…".toDoc()` 创建，`drop()` 只挂在这个类型上。 |
-| `JsonNode` | 树中一个值的句柄。 | `pub type JsonNode = struct cJSON;`；读取、`put`、`append` 都在它上面，它永远不拥有节点，因此没有节点级释放——对借用节点调用 `cJSON_Delete()` 会在 doc 释放时双重释放。 |
+| `JsonNode` | 树中一个值的句柄。 | `pub type JsonNode = struct ct_json_node;`；读取、`put`、`append` 都在它上面，它永远不拥有节点，因此没有节点级释放——对借用节点调用 `cJSON_Delete()` 会在 doc 释放时双重释放。 |
+| `ct_json_node` | 本包自己的节点句柄 tag，定义在 `Json.shim.h`，不单独分配。 | 句柄地址就是节点地址（`ct_json_handle()` / `ct_json_node_of()` 是恒等转换），所以 `setRoot(o)` 之后 `d.root() == o` 成立；vendored 的 `struct cJSON` 不再出现在任何公开签名里。 |
 | 严格模式（strict mode） | 先按规范逐字节校验文本，通过后才交给底层建树。 | `parse()` 先跑 `ct_json_validate()`，再调 `cJSON_ParseWithOpts()`；本包没有宽松开关，严格是唯一模式，失败时不会留下半棵树。 |
 | 节点计数（node count） | `setMaxNodes` 的口径：一次解析允许创建多少个节点。 | 根算 1，每个数组元素算 1，每个对象成员算 1，成员名不计；默认上限 100000。 |
 | `setMaxDepth`（`max_depth`） | 输入允许的最大嵌套层数。 | 默认 64；上限由 `CJSON_NESTING_LIMIT` 在编译期钉死，所以 `setMaxDepth()` 只能收紧，传大于 64 的值按 64 处理。 |
@@ -384,4 +385,6 @@ d.drop();
   `char *`（1 个 `toDoc`）。
 - 底层 cJSON 1.7.19 原样放在 `third_party/`，sha256 见 `tools/third_party.sha256`。
 - 按评审裁决删除节点级 `drop()` 与 `toJSON()`：doc 唯一拥有树，节点一律借用。
+- `JsonNode` 的底层收进包内节点句柄（tag 由 shim 提供）：公开签名、`pub type` 别名与
+  生成 C 里都不再出现三方结构体名。
 - 门槛：`tests/run.sh` 与 `tools/check.sh` 在 ct v0.20.3 上全绿，`-Wall -Wextra` 零告警。

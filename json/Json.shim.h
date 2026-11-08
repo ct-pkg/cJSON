@@ -58,6 +58,37 @@ struct ct_json_doc {
     int max_input;
 };
 
+/*
+ * The CT-visible node handle. `Json.m.ct` declares
+ * `pub type JsonNode = struct ct_json_node;`, so the public surface only ever
+ * names `ct_json_node`; the vendored `struct cJSON` stays private to this shim.
+ *
+ * A handle is not a separate allocation: it is the node's own address. The
+ * first (and only) member is the node itself, so `ct_json_handle()` and
+ * `ct_json_node_of()` are identity conversions at offset 0. That keeps
+ * `d.root() == o` (tests/chain.ct) true across `setRoot`, and it leaves the
+ * ownership story untouched: nothing here frees a handle, because a handle
+ * carries no storage of its own and every node is still owned by its doc.
+ *
+ * No shim function dereferences the wrapper: each one converts back to
+ * `cJSON *` before reading the node, so the two directions never disagree.
+ */
+typedef struct ct_json_node ct_json_node;
+
+struct ct_json_node {
+    cJSON node;
+};
+
+static inline ct_json_node *ct_json_handle(cJSON *n)
+{
+    return (ct_json_node *)n;
+}
+
+static inline cJSON *ct_json_node_of(ct_json_node *h)
+{
+    return (cJSON *)h;
+}
+
 /* ------------------------------------------------------------------ */
 /* strict validator                                                    */
 /* ------------------------------------------------------------------ */
@@ -846,7 +877,7 @@ static inline int ct_json_doc_parse(ct_json_doc *d, const char *text)
     return err;
 }
 
-static inline ct_json_doc *ct_json_doc_set_root(ct_json_doc *d, cJSON *root)
+static inline ct_json_doc *ct_json_doc_set_root(ct_json_doc *d, ct_json_node *root)
 {
     if (!d) {
         return 0;
@@ -856,7 +887,7 @@ static inline ct_json_doc *ct_json_doc_set_root(ct_json_doc *d, cJSON *root)
         d->out = 0;
     }
     cJSON_Delete(d->root);
-    d->root = root;
+    d->root = ct_json_node_of(root);
     d->err = 0;
     d->offset = -1;
     d->line = 0;
@@ -864,9 +895,9 @@ static inline ct_json_doc *ct_json_doc_set_root(ct_json_doc *d, cJSON *root)
     return d;
 }
 
-static inline cJSON *ct_json_doc_root(ct_json_doc *d)
+static inline ct_json_node *ct_json_doc_root(ct_json_doc *d)
 {
-    return d ? d->root : 0;
+    return ct_json_handle(d ? d->root : 0);
 }
 
 static inline ct_json_doc *ct_json_doc_set_max_depth(ct_json_doc *d, int n)
@@ -967,53 +998,57 @@ static inline int ct_json_doc_error_col(ct_json_doc *d)
 /* nodes                                                               */
 /* ------------------------------------------------------------------ */
 
-static inline int ct_json_node_kind(cJSON *n)
+static inline int ct_json_node_kind(ct_json_node *h)
 {
+    cJSON *n = ct_json_node_of(h);
     return n ? (n->type & 0xFF) : 0;
 }
 
-static inline int ct_json_node_is_null(cJSON *n)
+static inline int ct_json_node_is_null(ct_json_node *h)
 {
-    return cJSON_IsNull(n) ? 1 : 0;
+    return cJSON_IsNull(ct_json_node_of(h)) ? 1 : 0;
 }
 
-static inline int ct_json_node_is_bool(cJSON *n)
+static inline int ct_json_node_is_bool(ct_json_node *h)
 {
+    cJSON *n = ct_json_node_of(h);
     return (cJSON_IsTrue(n) || cJSON_IsFalse(n)) ? 1 : 0;
 }
 
-static inline int ct_json_node_is_number(cJSON *n)
+static inline int ct_json_node_is_number(ct_json_node *h)
 {
-    return cJSON_IsNumber(n) ? 1 : 0;
+    return cJSON_IsNumber(ct_json_node_of(h)) ? 1 : 0;
 }
 
-static inline int ct_json_node_is_string(cJSON *n)
+static inline int ct_json_node_is_string(ct_json_node *h)
 {
-    return cJSON_IsString(n) ? 1 : 0;
+    return cJSON_IsString(ct_json_node_of(h)) ? 1 : 0;
 }
 
-static inline int ct_json_node_is_array(cJSON *n)
+static inline int ct_json_node_is_array(ct_json_node *h)
 {
-    return cJSON_IsArray(n) ? 1 : 0;
+    return cJSON_IsArray(ct_json_node_of(h)) ? 1 : 0;
 }
 
-static inline int ct_json_node_is_object(cJSON *n)
+static inline int ct_json_node_is_object(ct_json_node *h)
 {
-    return cJSON_IsObject(n) ? 1 : 0;
+    return cJSON_IsObject(ct_json_node_of(h)) ? 1 : 0;
 }
 
-static inline int ct_json_node_bool(cJSON *n)
+static inline int ct_json_node_bool(ct_json_node *h)
 {
-    return cJSON_IsTrue(n) ? 1 : 0;
+    return cJSON_IsTrue(ct_json_node_of(h)) ? 1 : 0;
 }
 
-static inline double ct_json_node_number(cJSON *n)
+static inline double ct_json_node_number(ct_json_node *h)
 {
+    cJSON *n = ct_json_node_of(h);
     return cJSON_IsNumber(n) ? n->valuedouble : 0.0;
 }
 
-static inline int ct_json_node_int64(cJSON *n, long long *out)
+static inline int ct_json_node_int64(ct_json_node *h, long long *out)
 {
+    cJSON *n = ct_json_node_of(h);
     double v;
     long long ll;
 
@@ -1032,73 +1067,86 @@ static inline int ct_json_node_int64(cJSON *n, long long *out)
     return 0;
 }
 
-static inline char *ct_json_node_string(cJSON *n)
+static inline char *ct_json_node_string(ct_json_node *h)
 {
+    cJSON *n = ct_json_node_of(h);
     return cJSON_IsString(n) ? n->valuestring : 0;
 }
 
-static inline char *ct_json_node_key(cJSON *n)
+static inline char *ct_json_node_key(ct_json_node *h)
 {
+    cJSON *n = ct_json_node_of(h);
     return n ? n->string : 0;
 }
 
-static inline int ct_json_node_count(cJSON *n)
+static inline int ct_json_node_count(ct_json_node *h)
 {
+    cJSON *n = ct_json_node_of(h);
     return n ? cJSON_GetArraySize(n) : 0;
 }
 
-static inline cJSON *ct_json_node_first_child(cJSON *n)
+static inline ct_json_node *ct_json_node_first_child(ct_json_node *h)
 {
-    return n ? n->child : 0;
+    cJSON *n = ct_json_node_of(h);
+    return ct_json_handle(n ? n->child : 0);
 }
 
-static inline cJSON *ct_json_node_next_sibling(cJSON *n)
+static inline ct_json_node *ct_json_node_next_sibling(ct_json_node *h)
 {
-    return n ? n->next : 0;
+    cJSON *n = ct_json_node_of(h);
+    return ct_json_handle(n ? n->next : 0);
 }
 
-static inline cJSON *ct_json_node_child_at(cJSON *n, int index)
+static inline ct_json_node *ct_json_node_child_at(ct_json_node *h, int index)
 {
+    cJSON *n = ct_json_node_of(h);
     if (!n || index < 0) {
         return 0;
     }
-    return cJSON_GetArrayItem(n, index);
+    return ct_json_handle(cJSON_GetArrayItem(n, index));
 }
 
-static inline cJSON *ct_json_node_child_by_key(cJSON *n, const char *key)
+static inline ct_json_node *ct_json_node_child_by_key(ct_json_node *h, const char *key)
 {
+    cJSON *n = ct_json_node_of(h);
     if (!n || !key) {
         return 0;
     }
-    return cJSON_GetObjectItemCaseSensitive(n, key);
+    return ct_json_handle(cJSON_GetObjectItemCaseSensitive(n, key));
 }
 
 /* put and append return the receiver so a build chain keeps going; 0 means the
  * guard rejected the operation and the child was NOT consumed. */
-static inline cJSON *ct_json_node_put(cJSON *obj, const char *key, cJSON *child)
+static inline ct_json_node *ct_json_node_put(ct_json_node *h, const char *key, ct_json_node *child)
 {
-    if (!obj || !key || !child || !cJSON_IsObject(obj)) {
+    cJSON *obj = ct_json_node_of(h);
+    cJSON *c = ct_json_node_of(child);
+
+    if (!obj || !key || !c || !cJSON_IsObject(obj)) {
         return 0;
     }
     if (cJSON_GetObjectItemCaseSensitive(obj, key)) {
-        if (!cJSON_ReplaceItemInObjectCaseSensitive(obj, key, child)) {
+        if (!cJSON_ReplaceItemInObjectCaseSensitive(obj, key, c)) {
             return 0;
         }
-    } else if (!cJSON_AddItemToObject(obj, key, child)) {
+    } else if (!cJSON_AddItemToObject(obj, key, c)) {
         return 0;
     }
-    return obj;
+    return h;
 }
 
-static inline cJSON *ct_json_node_append(cJSON *arr, cJSON *child)
+static inline ct_json_node *ct_json_node_append(ct_json_node *h, ct_json_node *child)
 {
-    if (!arr || !child || !cJSON_IsArray(arr)) {
+    cJSON *arr = ct_json_node_of(h);
+    cJSON *c = ct_json_node_of(child);
+
+    if (!arr || !c || !cJSON_IsArray(arr)) {
         return 0;
     }
-    if (!cJSON_AddItemToArray(arr, child)) {
+    if (!cJSON_AddItemToArray(arr, c)) {
         return 0;
     }
-    return arr;
+    return h;
 }
 
 /* Nodes are always borrowed from a doc; there is deliberately no node-level
@@ -1109,40 +1157,40 @@ static inline cJSON *ct_json_node_append(cJSON *arr, cJSON *child)
 /* builders (no receiver exists for creating a detached value)          */
 /* ------------------------------------------------------------------ */
 
-static inline cJSON *ct_json_new_null(void)
+static inline ct_json_node *ct_json_new_null(void)
 {
-    return cJSON_CreateNull();
+    return ct_json_handle(cJSON_CreateNull());
 }
 
-static inline cJSON *ct_json_new_bool(int v)
+static inline ct_json_node *ct_json_new_bool(int v)
 {
-    return cJSON_CreateBool(v ? 1 : 0);
+    return ct_json_handle(cJSON_CreateBool(v ? 1 : 0));
 }
 
-static inline cJSON *ct_json_new_number(double v)
+static inline ct_json_node *ct_json_new_number(double v)
 {
     if (v > 1.7976931348623157e308 || v < -1.7976931348623157e308) {
         return 0;
     }
-    return cJSON_CreateNumber(v);
+    return ct_json_handle(cJSON_CreateNumber(v));
 }
 
-static inline cJSON *ct_json_new_string(const char *s)
+static inline ct_json_node *ct_json_new_string(const char *s)
 {
     if (!s) {
         return 0;
     }
-    return cJSON_CreateString(s);
+    return ct_json_handle(cJSON_CreateString(s));
 }
 
-static inline cJSON *ct_json_new_array(void)
+static inline ct_json_node *ct_json_new_array(void)
 {
-    return cJSON_CreateArray();
+    return ct_json_handle(cJSON_CreateArray());
 }
 
-static inline cJSON *ct_json_new_object(void)
+static inline ct_json_node *ct_json_new_object(void)
 {
-    return cJSON_CreateObject();
+    return ct_json_handle(cJSON_CreateObject());
 }
 
 /* ------------------------------------------------------------------ */
