@@ -16,7 +16,7 @@
 # are relative to the consumer root, where the package lands as
 # `vendor/cJSON/`.
 name = cJSON
-version = 0.1.0
+version = 0.2.0
 licence = MIT
 cflags = -I vendor/cJSON/third_party -DCJSON_NESTING_LIMIT=64
 ldflags = vendor/cJSON/third_party/cJSON.c -lm
