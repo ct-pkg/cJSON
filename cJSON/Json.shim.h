@@ -1,5 +1,5 @@
 /*
- * Json.shim.h - the C side of the json package.
+ * Json.shim.h - the C side of the cJSON package.
  *
  * Two layers live here:
  *

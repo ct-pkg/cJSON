@@ -53,12 +53,12 @@ if ! command -v "$CT" >/dev/null 2>&1; then
     exit 1
 fi
 
-work="${TMPDIR:-/tmp}/ct-json-mem.$$"
+work="${TMPDIR:-/tmp}/ct-cjson-mem.$$"
 rm -rf "$work"
 mkdir -p "$work/roots" || exit 1
 
-# `ct build` honours a single -I; mem.ct imports json:: and std::str::.
-ln -s "$pkg/json" "$work/roots/json"
+# `ct build` honours a single -I; mem.ct imports cJSON:: and std::str::.
+ln -s "$pkg/cJSON" "$work/roots/cJSON"
 if [ -d "$repo/std/std" ]; then
     ln -s "$repo/std/std" "$work/roots/std"
 fi

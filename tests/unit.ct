@@ -1,5 +1,5 @@
 /*
- * unit.ct - the json package's repeatable suite: positives, the strict
+ * unit.ct - the cJSON package's repeatable suite: positives, the strict
  * negatives (status code plus exact line:col), the limits and the positions.
  *
  * Run through tests/run.sh, which requires `SUMMARY passed=N failed=0` and a
@@ -10,8 +10,8 @@
 
 #include <stdio.h>
 
-import json::JsonTypes;
-import json::Json;
+import cJSON::JsonTypes;
+import cJSON::Json;
 import std::str::String;
 
 int passed = 0;
@@ -43,7 +43,7 @@ void check_at(JsonDoc *d, int code, int line, int col, const char *name)
 /* parses `text` on a fresh doc, asserts the status, then frees the doc */
 void check_parse(const char *text, int code, const char *name)
 {
-    JsonDoc *d = json::Lib.newDoc();
+    JsonDoc *d = cJSON::Lib.newDoc();
     int st = d.parse(text);
     check(st == code, name);
     if (code != JSON_OK && st != code) {
@@ -54,7 +54,7 @@ void check_parse(const char *text, int code, const char *name)
 
 void check_neg(const char *text, int code, int line, int col, const char *name)
 {
-    JsonDoc *d = json::Lib.newDoc();
+    JsonDoc *d = cJSON::Lib.newDoc();
     int st = d.parse(text);
     check(st == code && d.root() == 0, name);
     check_at(d, code, line, col, name);
@@ -255,7 +255,7 @@ int main(void)
     check_neg("{\"a\\u0000b\":1,\"a\":2}", JSON_ERR_CONTROL, 1, 4, "\\u0000 in a key");
 
     /* raw control byte 0x01 inside a string */
-    d = json::Lib.newDoc();
+    d = cJSON::Lib.newDoc();
     buf[0] = '{';
     buf[1] = '"';
     buf[2] = 's';
@@ -272,7 +272,7 @@ int main(void)
     d.drop();
 
     /* lone 0xFF is not UTF-8 */
-    d = json::Lib.newDoc();
+    d = cJSON::Lib.newDoc();
     buf[0] = '"';
     buf[1] = (char)255;
     buf[2] = '"';
@@ -283,7 +283,7 @@ int main(void)
     d.drop();
 
     /* overlong two-byte form C0 80 */
-    d = json::Lib.newDoc();
+    d = cJSON::Lib.newDoc();
     buf[0] = '"';
     buf[1] = (char)192;
     buf[2] = (char)128;
@@ -294,7 +294,7 @@ int main(void)
     d.drop();
 
     /* a UTF-8 BOM is not whitespace */
-    d = json::Lib.newDoc();
+    d = cJSON::Lib.newDoc();
     buf[0] = (char)239;
     buf[1] = (char)187;
     buf[2] = (char)191;
@@ -307,7 +307,7 @@ int main(void)
 
     /* ---------------- C7 positions across lines ---------------- */
 
-    d = json::Lib.newDoc();
+    d = cJSON::Lib.newDoc();
     st = d.parse("{\n  \"a\": 1,\n  \"b\" 2\n}");
     check(st == JSON_ERR_SYNTAX, "multi-line syntax error");
     check_at(d, JSON_ERR_SYNTAX, 3, 7, "multi-line position");
@@ -315,7 +315,7 @@ int main(void)
     d.drop();
 
     /* C7.5: two consecutive failures each keep their own position */
-    d = json::Lib.newDoc();
+    d = cJSON::Lib.newDoc();
     check(d.parse("{\"a\":1,\"a\":2}") == JSON_ERR_DUP_KEY, "C7.5 first parse fails");
     check_at(d, JSON_ERR_DUP_KEY, 1, 8, "C7.5 first position");
     check(d.parse("[1,]") == JSON_ERR_SYNTAX, "C7.5 second parse fails");
@@ -324,13 +324,13 @@ int main(void)
 
     /* ---------------- C8 limits ---------------- */
 
-    d = json::Lib.newDoc();
+    d = cJSON::Lib.newDoc();
     check(d.setMaxDepth(1).parse("[1]") == JSON_OK, "maxDepth 1 allows one level");
     check(d.setMaxDepth(1).parse("[[1]]") == JSON_ERR_LIMIT, "maxDepth 1 rejects two levels");
     check_at(d, JSON_ERR_LIMIT, 1, 2, "maxDepth position");
     d.drop();
 
-    d = json::Lib.newDoc();
+    d = cJSON::Lib.newDoc();
     check(d.setMaxNodes(1).parse("[]") == JSON_OK, "maxNodes 1 allows an empty array");
     check(d.setMaxNodes(1).parse("[1]") == JSON_ERR_LIMIT, "maxNodes 1 rejects one element");
     check_at(d, JSON_ERR_LIMIT, 1, 2, "maxNodes position");
@@ -339,24 +339,24 @@ int main(void)
     check_at(d, JSON_ERR_LIMIT, 1, 6, "maxNodes object position");
     d.drop();
 
-    d = json::Lib.newDoc();
+    d = cJSON::Lib.newDoc();
     check(d.setMaxString(3).parse("\"abc\"") == JSON_OK, "maxString 3 allows three bytes");
     check(d.setMaxString(3).parse("\"abcd\"") == JSON_ERR_LIMIT, "maxString 3 rejects four bytes");
     check_at(d, JSON_ERR_LIMIT, 1, 5, "maxString position");
     d.drop();
 
-    d = json::Lib.newDoc();
+    d = cJSON::Lib.newDoc();
     check(d.setMaxString(1).parse("\"\\u00e9\"") == JSON_ERR_LIMIT, "maxString counts decoded bytes");
     check_at(d, JSON_ERR_LIMIT, 1, 2, "maxString position in an escape");
     d.drop();
 
-    d = json::Lib.newDoc();
+    d = cJSON::Lib.newDoc();
     check(d.setMaxInput(4).parse("123") == JSON_OK, "maxInput 4 allows three bytes");
     check(d.setMaxInput(4).parse("12345") == JSON_ERR_LIMIT, "maxInput 4 rejects five bytes");
     check_at(d, JSON_ERR_LIMIT, 1, 1, "maxInput position");
     d.drop();
 
-    d = json::Lib.newDoc();
+    d = cJSON::Lib.newDoc();
     check(d.setMaxNodes(0).setMaxDepth(0).setMaxString(0).setMaxInput(0) == d,
           "non-positive limits leave the doc unchanged");
     check(d.parse("[1,2,3]") == JSON_OK, "doc still parses after ignored limits");
@@ -370,7 +370,7 @@ int main(void)
         big[2 + k * 2] = (k == 99998) ? ']' : ',';
     }
     big[1 + 99999 * 2] = 0;
-    d = json::Lib.newDoc();
+    d = cJSON::Lib.newDoc();
     st = d.parse(big);
     check(st == JSON_OK, "exactly 100000 nodes is allowed");
     d.drop();
@@ -381,7 +381,7 @@ int main(void)
         big[2 + k * 2] = (k == 100000) ? ']' : ',';
     }
     big[1 + 100001 * 2] = 0;
-    d = json::Lib.newDoc();
+    d = cJSON::Lib.newDoc();
     st = d.parse(big);
     check(st == JSON_ERR_LIMIT, "100001 values hit the default node ceiling");
     check_at(d, JSON_ERR_LIMIT, 1, 200000, "node ceiling position");
@@ -396,14 +396,14 @@ int main(void)
         big[66 + k] = ']';
     }
     big[131] = 0;
-    d = json::Lib.newDoc();
+    d = cJSON::Lib.newDoc();
     st = d.parse(big);
     check(st == JSON_ERR_LIMIT, "65 nested arrays rejected");
     check_at(d, JSON_ERR_LIMIT, 1, 65, "65th bracket position");
     d.drop();
 
     /* C8.5: a larger maxDepth is clamped to the compile-time cap */
-    d = json::Lib.newDoc();
+    d = cJSON::Lib.newDoc();
     check(d.setMaxDepth(1000).parse(big) == JSON_ERR_LIMIT,
           "maxDepth 1000 is still clamped to 64");
     check_at(d, JSON_ERR_LIMIT, 1, 65, "clamped depth position");
@@ -411,7 +411,7 @@ int main(void)
 
     /* ---------------- error state transitions ---------------- */
 
-    d = json::Lib.newDoc();
+    d = cJSON::Lib.newDoc();
     check(d.parse("{\"a\":1,\"a\":2}") == JSON_ERR_DUP_KEY, "first parse fails");
     check(d.root() == 0, "failed parse leaves no root");
     check(d.parse("{\"a\":1}") == JSON_OK, "second parse succeeds on the same doc");
@@ -424,7 +424,7 @@ int main(void)
     check(d == 0, "toDoc rejects duplicate keys");
     d = "{\"a\":1}x".toDoc();
     check(d == 0, "toDoc rejects trailing garbage");
-    d = json::Lib.newDoc();
+    d = cJSON::Lib.newDoc();
     check(d.parse(0) == JSON_ERR_SYNTAX, "null input is a syntax error");
     check_at(d, JSON_ERR_SYNTAX, 1, 1, "null input position");
     d.drop();

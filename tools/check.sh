@@ -1,12 +1,12 @@
 #!/usr/bin/env bash
 #
-# tools/check.sh - the json package gate.
+# tools/check.sh - the cJSON package gate.
 #
 #   bash tools/check.sh
 #
 # Static checks, then the behavioural gate:
 #
-#   1. the delivered file set exists and nothing under json/docs/ does;
+#   1. the delivered file set exists and nothing under cJSON/docs/ does;
 #   2. ct.pkg has the five expected keys, requires ct >= 0.20.3, and points at
 #      third_party/ (never vendor/: `ct get` skips vendor/);
 #   3. third_party/cJSON.{h,c} match tools/third_party.sha256 byte for byte;
@@ -20,7 +20,7 @@
 #      `JsonStatus` code (both directions checked);
 #   7. the 1k-vs-10k RSS bounds (tests/mem.sh, five modes);
 #   8. an installed-layout build: a real `ct get` copies the package into
-#      <tmp>/vendor/json, `ct install` must print third_party flags and the
+#      <tmp>/vendor/cJSON, `ct install` must print third_party flags and the
 #      copied tree must still contain third_party/ (the installer skips
 #      directories named `vendor/`); then build, run and diff the demo;
 #   9. tests/run.sh (builds every suite with -Wall -Wextra, runs them, asserts
@@ -40,17 +40,18 @@ fail=0
 ok()  { pass=$((pass + 1)); printf '  ok    %s\n' "$1"; }
 bad() { fail=$((fail + 1)); printf '  FAIL  %s: %s\n' "$1" "$2"; }
 
-work="${TMPDIR:-/tmp}/ct-json-check.$$"
+work="${TMPDIR:-/tmp}/ct-cjson-check.$$"
 cleanup() { rm -rf "$work"; }
 trap cleanup EXIT HUP INT TERM
 mkdir -p "$work" || exit 1
 
-echo "json gate: $pkg"
+echo "ct: $("$CT" --version 2>&1)"
+echo "cJSON gate: $pkg"
 echo
 
 echo "== delivered files =="
 for f in ct.pkg LICENSE README.md \
-         json/Json.m.ct json/JsonTypes.h.ct json/Json.shim.h \
+         cJSON/Json.m.ct cJSON/JsonTypes.h.ct cJSON/Json.shim.h \
          third_party/cJSON.h third_party/cJSON.c third_party/LICENSE \
          tools/third_party.sha256 tools/check.sh \
          tests/run.sh tests/unit.ct tests/chain.ct tests/serialize.ct tests/sugar.ct \
@@ -67,7 +68,7 @@ done
 if [ -e "$pkg/docs" ]; then
     bad "docs/ absent" "the package documents through README.md only"
 else
-    ok "no json/docs directory"
+    ok "no cJSON/docs directory"
 fi
 echo
 
@@ -94,9 +95,9 @@ if [ -d "$pkg/vendor" ]; then
 else
     ok "no package-local vendor/ directory"
 fi
-# C0.2 / C9.4: json must not depend on std (the tests add std themselves).
+# C0.2 / C9.4: cJSON must not depend on std (the tests add std themselves).
 if grep -Eq '^dep[[:space:]]*=[[:space:]]*std([[:space:]]|$)' "$pkg/ct.pkg"; then
-    bad "C0.2/C9.4 dep = std" "json must not pull std into consumers"
+    bad "C0.2/C9.4 dep = std" "cJSON must not pull std into consumers"
 else
     ok "C0.2/C9.4 ct.pkg has no dep = std"
 fi
@@ -117,13 +118,16 @@ fi
 echo
 
 echo "== public surface =="
-if grep -q '^pub fn ' "$pkg/json/Json.m.ct"; then
+if grep -q '^pub fn ' "$pkg/cJSON/Json.m.ct"; then
     bad "no free pub fn" "every method must hang off a type or namespace host"
 else
     ok "no free pub fn in Json.m.ct"
 fi
 # C1.1: strip comments, the two `pub type` alias lines and everything right of
-# `->` (the C recipe), then no `cJSON` / `struct ct_json_doc` may remain.
+# `->` (the C recipe), then no `cJSON *` / `struct cJSON` / `cJSON <ident>` /
+# `struct ct_json_doc` may remain. `cJSON` as the package namespace
+# (`namespace cJSON;`, `map trait Lib for namespace cJSON`) is not a C type and
+# must not count.
 sig="$(awk '
     {
         line = $0
@@ -142,20 +146,56 @@ sig="$(awk '
         if (line ~ /^[[:space:]]*pub[[:space:]]+type[[:space:]]/) next
         sub(/->.*/, "", line)
         print line
-    }' "$pkg/json/Json.m.ct")"
-ci1_cjson="$(printf '%s\n' "$sig" | grep -c 'cJSON')"
+    }' "$pkg/cJSON/Json.m.ct")"
+ci1_cjson="$(printf '%s\n' "$sig" | grep -Ec 'struct[[:space:]]+cJSON|cJSON[[:space:]]*\*|cJSON[[:space:]]+[A-Za-z_]')"
 ci1_doc="$(printf '%s\n' "$sig" | grep -c 'struct ct_json_doc')"
 if [ "$ci1_cjson" -eq 0 ] && [ "$ci1_doc" -eq 0 ]; then
     ok "C1.1 no cJSON / ct_json_doc in the public signatures"
 else
     bad "C1.1 C type leak" "cJSON=$ci1_cjson ct_json_doc=$ci1_doc after stripping aliases and recipes"
 fi
+# C1.12: no generated global may collide with a global defined by
+# third_party/cJSON.c. `--emit-c` stops before linking, so a collision is
+# reported as a symbol-set fact instead of a cc/link error. Any generated
+# symbol under the upstream `cJSON_` prefix is a failure even when the current
+# vendored version happens not to define that name.
+symdir="$work/sym"
+mkdir -p "$symdir/emit" "$symdir/obj"
+if ( cd "$symdir" && "$CT" build --emit-c --outdir "$symdir/emit" -I "$pkg" "$pkg/demo/main.ct" ) \
+        >"$symdir/emit.log" 2>&1; then
+    symflags="-std=c99 -I $pkg/third_party -DCJSON_NESTING_LIMIT=64 -I $pkg/cJSON -I $symdir/emit"
+    symok=1
+    for src in "$symdir"/emit/*.c; do
+        "${CC:-cc}" $symflags -c "$src" -o "$symdir/obj/$(basename "$src" .c).o" \
+            2>>"$symdir/emit.log" || symok=0
+    done
+    "${CC:-cc}" $symflags -c "$pkg/third_party/cJSON.c" -o "$symdir/obj/cJSON.o" \
+        2>>"$symdir/emit.log" || symok=0
+    if [ "$symok" -eq 1 ]; then
+        nm -g --defined-only "$symdir"/obj/*.o 2>/dev/null \
+            | awk 'NF==3 {print $3}' | sed 's/^_//' | sort -u > "$symdir/all.syms"
+        nm -g --defined-only "$symdir/obj/cJSON.o" 2>/dev/null \
+            | awk 'NF==3 {print $3}' | sed 's/^_//' | sort -u > "$symdir/upstream.syms"
+        comm -23 "$symdir/all.syms" "$symdir/upstream.syms" > "$symdir/gen.syms"
+        sym_inter="$(comm -12 "$symdir/gen.syms" "$symdir/upstream.syms" | tr '\n' ' ')"
+        sym_prefix="$(grep -E '^cJSON_' "$symdir/gen.syms" | tr '\n' ' ')"
+        if [ -z "$sym_inter" ] && [ -z "$sym_prefix" ]; then
+            ok "C1.12 generated symbols are disjoint from third_party/cJSON.c"
+        else
+            bad "C1.12 symbol collision" "intersection=[$sym_inter] cJSON_prefix=[$sym_prefix]"
+        fi
+    else
+        bad "C1.12 symbol collision" "generated C did not compile; see $symdir/emit.log"
+    fi
+else
+    bad "C1.12 symbol collision" "ct build --emit-c failed; see $symdir/emit.log"
+fi
 # C1.1 (tightened): the strip above skips `pub type` lines because `JsonDoc`
 # legitimately aliases the package-private `ct_json_doc` tag. That would also
 # hide a regression of the node alias itself, so pin that one line: `JsonNode`
 # must name the package handle `ct_json_node`, never the vendored `cJSON`.
 if grep -Eq '^[[:space:]]*pub[[:space:]]+type[[:space:]]+JsonNode[[:space:]]*=[[:space:]]*struct[[:space:]]+ct_json_node[[:space:]]*;' \
-        "$pkg/json/Json.m.ct"; then
+        "$pkg/cJSON/Json.m.ct"; then
     ok "C1.1 JsonNode aliases the package handle, not the vendored struct"
 else
     bad "C1.1 JsonNode alias" "expected 'pub type JsonNode = struct ct_json_node;'"
@@ -163,7 +203,7 @@ fi
 # C1.9: the Lib host is exactly the seven constructors; a `set*` smuggled onto
 # the namespace would change the configuration story.
 lib_methods="$(awk '
-    /^map trait Lib for namespace json/ { inblock = 1; next }
+    /^map trait Lib for namespace cJSON/ { inblock = 1; next }
     inblock && /^[[:space:]]*}/ { inblock = 0 }
     inblock {
         line = $0
@@ -172,7 +212,7 @@ lib_methods="$(awk '
             sub(/[[:space:]]*\(.*/, "", line)
             print line
         }
-    }' "$pkg/json/Json.m.ct" | sort | tr '\n' ' ')"
+    }' "$pkg/cJSON/Json.m.ct" | sort | tr '\n' ' ')"
 lib_expected="newArray newBool newDoc newNull newNumber newObject newString "
 if [ "$lib_methods" = "$lib_expected" ]; then
     ok "C1.9 Lib host is exactly the 7 constructors"
@@ -180,8 +220,8 @@ else
     bad "C1.9 Lib host" "got [$lib_methods], want [$lib_expected]"
 fi
 for host in 'map trait Node for type JsonNode \*' 'map trait Doc for type JsonDoc \*' \
-            'map trait Text for type char \*' 'map trait Lib for namespace json'; do
-    if grep -Eq "$host" "$pkg/json/Json.m.ct"; then
+            'map trait Text for type char \*' 'map trait Lib for namespace cJSON'; do
+    if grep -Eq "$host" "$pkg/cJSON/Json.m.ct"; then
         ok "host: $host"
     else
         bad "host: $host" "missing"
@@ -189,7 +229,7 @@ for host in 'map trait Node for type JsonNode \*' 'map trait Doc for type JsonDo
 done
 # C1.3 / C1.4: the declared return types, not only the runtime identity.
 while IFS= read -r sig; do
-    if grep -Fq "$sig" "$pkg/json/Json.m.ct"; then
+    if grep -Fq "$sig" "$pkg/cJSON/Json.m.ct"; then
         ok "C1.3/C1.4 signature: $sig"
     else
         bad "C1.3/C1.4 signature: $sig" "not declared"
@@ -223,19 +263,19 @@ if [ -z "$leaks" ]; then
 else
     bad "C type leak" "$(printf '%s' "$leaks" | head -3)"
 fi
-if grep -rq 'toJSON\|ct_json_text_to_json\|ct_json_node_drop' "$pkg/json" "$pkg/tests" "$pkg/demo" 2>/dev/null; then
+if grep -rq 'toJSON\|ct_json_text_to_json\|ct_json_node_drop' "$pkg/cJSON" "$pkg/tests" "$pkg/demo" 2>/dev/null; then
     bad "removed surface" "toJSON / node drop reappeared"
 else
     ok "toJSON and node-level drop stay removed"
 fi
-if grep -q 'nextSibling' "$pkg/json/Json.m.ct" && ! grep -q 'int next()' "$pkg/json/Json.m.ct"; then
+if grep -q 'nextSibling' "$pkg/cJSON/Json.m.ct" && ! grep -q 'int next()' "$pkg/cJSON/Json.m.ct"; then
     ok "the walker is nextSibling only"
 else
     bad "walker name" "expected nextSibling and no next"
 fi
 # C6.7: the package must never install its own allocator hooks; only the
 # upstream definition may mention InitHooks, so scan the package code alone.
-hooks="$(grep -rn 'cJSON_InitHooks(' "$pkg/json" 2>/dev/null || true)"
+hooks="$(grep -rn 'cJSON_InitHooks(' "$pkg/cJSON" 2>/dev/null || true)"
 if [ -z "$hooks" ]; then
     ok "C6.7 no cJSON_InitHooks( call in the package code"
 else
@@ -243,7 +283,7 @@ else
 fi
 # C0.5: JsonTypes carries enums only - no functions, traits or structs.
 if grep -Eq '^(pub[[:space:]]+)?(fn|struct|trait|impl|use|const)[[:space:]]' \
-        "$pkg/json/JsonTypes.h.ct"; then
+        "$pkg/cJSON/JsonTypes.h.ct"; then
     bad "C0.5 JsonTypes" "only enums may live in JsonTypes.h.ct"
 else
     ok "C0.5 JsonTypes holds enums only"
@@ -272,14 +312,14 @@ shim_bad="$(awk '
         if (line ~ /^\}/) next
         if (line ~ /^static inline /) next
         print
-    }' "$pkg/json/Json.shim.h")"
+    }' "$pkg/cJSON/Json.shim.h")"
 if [ -z "$shim_bad" ]; then
     ok "C0.6 every shim definition is static inline"
 else
     bad "C0.6 shim linkage" "$(printf '%s' "$shim_bad" | head -3)"
 fi
 # C7.5: positions come from the strict scanner, never from cJSON's pointer.
-if grep -rq 'cJSON_GetErrorPtr' "$pkg/json"; then
+if grep -rq 'cJSON_GetErrorPtr' "$pkg/cJSON"; then
     bad "C7.5 GetErrorPtr" "the shim must not fall back to cJSON_GetErrorPtr"
 else
     ok "C7.5 no cJSON_GetErrorPtr in the package code"
@@ -305,7 +345,7 @@ status_names="$(awk '
             print substr(line, RSTART, RLENGTH)
             line = substr(line, RSTART + RLENGTH)
         }
-    }' "$pkg/json/JsonTypes.h.ct" | sort | tr '\n' ' ')"
+    }' "$pkg/cJSON/JsonTypes.h.ct" | sort | tr '\n' ' ')"
 status_expected="JSON_ERR_BOM JSON_ERR_CONTROL JSON_ERR_DUP_KEY JSON_ERR_LIMIT JSON_ERR_NONFINITE JSON_ERR_SYNTAX JSON_ERR_UTF8 JSON_OK "
 if [ "$status_names" = "$status_expected" ]; then
     ok "JsonStatus declares exactly the 8 documented codes"
@@ -350,25 +390,25 @@ else
         bad "ct get" "see log"
         cat "$work/get.log" >&2
         install_ok=0
-    elif [ ! -f "$work/vendor/json/third_party/cJSON.h" ] ||
-         [ ! -f "$work/vendor/json/third_party/cJSON.c" ]; then
+    elif [ ! -f "$work/vendor/cJSON/third_party/cJSON.h" ] ||
+         [ ! -f "$work/vendor/cJSON/third_party/cJSON.c" ]; then
         # Regression guard: `ct get`'s copy_tree skips directories named
         # `vendor`, which is exactly how the old layout shipped broken.
         bad "ct get copy" "third_party/ did not survive the install copy"
-        ls -R "$work/vendor/json" >&2
+        ls -R "$work/vendor/cJSON" >&2
         install_ok=0
-    elif [ -d "$work/vendor/json/vendor" ]; then
+    elif [ -d "$work/vendor/cJSON/vendor" ]; then
         bad "ct get copy" "the installed package still carries a vendor/ directory"
         install_ok=0
     else
-        ok "ct get copies third_party/ into vendor/json"
+        ok "ct get copies third_party/ into vendor/cJSON"
     fi
     if [ "$install_ok" -eq 1 ]; then
         if ! (cd "$work" && "$CT" install) >"$work/install.log" 2>&1; then
             bad "ct install" "see log"
             cat "$work/install.log" >&2
             install_ok=0
-        elif grep -q 'vendor/json/third_party' "$work/install.log"; then
+        elif grep -q 'vendor/cJSON/third_party' "$work/install.log"; then
             ok "ct install prints the third_party flags"
         else
             bad "ct install flags" "third_party missing from the printed command"
@@ -386,10 +426,10 @@ else
     if [ "$install_ok" -eq 1 ]; then
         (
             cd "$work" || exit 1
-            "$CT" build -I vendor/json \
-                --cflags "-I vendor/json/third_party -DCJSON_NESTING_LIMIT=64 -Wall -Wextra" \
-                --ldflags "vendor/json/third_party/cJSON.c -lm" \
-                vendor/json/demo/main.ct -o demo_installed
+            "$CT" build -I vendor/cJSON \
+                --cflags "-I vendor/cJSON/third_party -DCJSON_NESTING_LIMIT=64 -Wall -Wextra" \
+                --ldflags "vendor/cJSON/third_party/cJSON.c -lm" \
+                vendor/cJSON/demo/main.ct -o demo_installed
         ) >"$work/installed.log" 2>&1
         if [ $? -eq 0 ] && ! grep -q 'warning:' "$work/installed.log"; then
             if "$work/demo_installed" >"$work/installed.out" 2>&1 &&
@@ -435,7 +475,7 @@ else
 fi
 echo
 
-printf 'json gate: %d passed, %d failed\n' "$pass" "$fail"
+printf 'cJSON gate: %d passed, %d failed\n' "$pass" "$fail"
 if [ "$fail" -ne 0 ]; then
     exit 1
 fi

@@ -2,9 +2,9 @@
  * JsonTypes - the enumerations the CT side compares against.
  *
  * Only enums live here: a `.m.ct` cannot declare an enum, and a consumer that
- * imports only `json::Json` does not see these constants. Import both units.
+ * imports only `cJSON::Json` does not see these constants. Import both units.
  */
-namespace json;
+namespace cJSON;
 
 /*
  * Node kinds. The values are cJSON's bit flags (`JSON_NULL` is 4, not 0),

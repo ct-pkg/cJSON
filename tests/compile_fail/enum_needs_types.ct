@@ -1,13 +1,13 @@
 /*
  * compile_fail/enum_needs_types.ct - built by tests/run.sh, must NOT compile.
  *
- * C9.3: `json::Json` exposes the traits only. The enum constants live in
- * `json::JsonTypes`, so importing just the trait module cannot see JSON_OK.
+ * C9.3: `cJSON::Json` exposes the traits only. The enum constants live in
+ * `cJSON::JsonTypes`, so importing just the trait module cannot see JSON_OK.
  *
  * License: MIT (see LICENSE).
  */
 
-import json::Json;
+import cJSON::Json;
 
 int main(void)
 {

@@ -1,8 +1,8 @@
 /*
- * demo/main.ct - the smallest end-to-end json program.
+ * demo/main.ct - the smallest end-to-end cJSON program.
  *
- *   ct build -I . --cflags '-I vendor/json/third_party -DCJSON_NESTING_LIMIT=64' \
- *            --ldflags 'vendor/json/third_party/cJSON.c -lm' demo/main.ct -o demo
+ *   ct build -I . --cflags '-I vendor/cJSON/third_party -DCJSON_NESTING_LIMIT=64' \
+ *            --ldflags 'vendor/cJSON/third_party/cJSON.c -lm' demo/main.ct -o demo
  *
  * tests/run.sh builds and runs this and diffs the output against
  * demo/expected.out, so the demo is a checked artifact, not just a sample.
@@ -16,8 +16,8 @@
 
 #include <stdio.h>
 
-import json::JsonTypes;
-import json::Json;
+import cJSON::JsonTypes;
+import cJSON::Json;
 
 int main(void)
 {
@@ -29,7 +29,7 @@ int main(void)
 
     d = "{\"name\":\"ct\",\"version\":\"0.20.3\",\"stable\":true,\"tags\":[\"c\",\"json\"]}".toDoc();
     if (!d) {
-        printf("json: parse failed\n");
+        printf("cJSON: parse failed\n");
         return 1;
     }
 
@@ -43,12 +43,12 @@ int main(void)
     printf("compact: %s\n", out);
     d.drop();
 
-    o = json::Lib.newObject().put("ok", json::Lib.newBool(1));
-    a = json::Lib.newArray().append(json::Lib.newNumber(1));
-    a.append(json::Lib.newString("two"));
+    o = cJSON::Lib.newObject().put("ok", cJSON::Lib.newBool(1));
+    a = cJSON::Lib.newArray().append(cJSON::Lib.newNumber(1));
+    a.append(cJSON::Lib.newString("two"));
     o.put("items", a);
 
-    d = json::Lib.newDoc().setRoot(o);
+    d = cJSON::Lib.newDoc().setRoot(o);
     printf("built: %s\n", d.write(0));
     d.drop();
     return 0;

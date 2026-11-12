@@ -4,15 +4,15 @@
  * `Text` hangs off `char *`, so a literal, a variable and a `char *` returned
  * by another call all reach `toDoc()`. Values come back as borrowed `char *`
  * and use the ordinary std::str::String methods, because the type key drops a
- * top-level `const` and `json` never returns a NUL inside a value.
+ * top-level `const` and `cJSON` never returns a NUL inside a value.
  *
  * License: MIT (see LICENSE).
  */
 
 #include <stdio.h>
 
-import json::JsonTypes;
-import json::Json;
+import cJSON::JsonTypes;
+import cJSON::Json;
 import std::str::String;
 
 int passed = 0;

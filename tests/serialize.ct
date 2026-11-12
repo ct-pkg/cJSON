@@ -11,8 +11,8 @@
 
 #include <stdio.h>
 
-import json::JsonTypes;
-import json::Json;
+import cJSON::JsonTypes;
+import cJSON::Json;
 import std::str::String;
 
 int passed = 0;
@@ -202,16 +202,16 @@ int main(void)
     d.drop();
 
     /* rendering a tree that came from builders */
-    o = json::Lib.newObject().put("n", json::Lib.newNumber(2));
-    o.put("t", json::Lib.newBool(0));
-    d = json::Lib.newDoc().setRoot(o);
+    o = cJSON::Lib.newObject().put("n", cJSON::Lib.newNumber(2));
+    o.put("t", cJSON::Lib.newBool(0));
+    d = cJSON::Lib.newDoc().setRoot(o);
     check(d.write(0).compare("{\"n\":2,\"t\":false}") == 0, "a built tree renders");
     d.drop();
 
     /* C5.1: a built tree renders, re-parses and keeps its members */
-    o = json::Lib.newObject().put("id", json::Lib.newNumber(7));
-    o.put("ok", json::Lib.newBool(1));
-    d = json::Lib.newDoc().setRoot(o);
+    o = cJSON::Lib.newObject().put("id", cJSON::Lib.newNumber(7));
+    o.put("ok", cJSON::Lib.newBool(1));
+    d = cJSON::Lib.newDoc().setRoot(o);
     n = d.writeBuf(buf, 128, 0);
     bp = buf;
     e = bp.toDoc();
@@ -225,7 +225,7 @@ int main(void)
     d.drop();
 
     /* no root: write and writeBuf both report failure */
-    d = json::Lib.newDoc();
+    d = cJSON::Lib.newDoc();
     check(d.write(0) == 0, "write without a root returns 0");
     check(d.writeBuf(buf, 8, 0) == -1, "writeBuf without a root returns -1");
     d.drop();

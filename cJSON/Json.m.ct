@@ -13,13 +13,13 @@
  * the node, so both the setup chain and the build chain stay on one line:
  *
  *   d.setMaxDepth(64).setMaxNodes(100000).parse(text);
- *   json::Lib.newObject().put("k", json::Lib.newNumber(1));
+ *   cJSON::Lib.newObject().put("k", cJSON::Lib.newNumber(1));
  *
  * Ownership: a doc owns its tree exclusively; every `JsonNode *` the package
  * hands out is borrowed and lives until the owning doc is dropped. `drop()`
  * exists only on `JsonDoc *` and is single use.
  */
-namespace json;
+namespace cJSON;
 
 pub type JsonNode = struct ct_json_node;
 pub type JsonDoc = struct ct_json_doc;
@@ -130,7 +130,7 @@ map trait Doc for type JsonDoc * {
     drop(d) -> ct_json_doc_free(d);
 }
 
-map trait Lib for namespace json {
+map trait Lib for namespace cJSON {
     newDoc() -> ct_json_doc_new();
     newNull() -> ct_json_new_null();
     newBool(v) -> ct_json_new_bool(v);

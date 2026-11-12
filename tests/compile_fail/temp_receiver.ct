@@ -1,35 +1,47 @@
 /*
- * compile_fail/temp_receiver.ct - the one chain shape ct v0.20.3 rejects.
+ * compile_fail/temp_receiver.ct - the temporary-receiver rule on ct v0.24.0.
  *
- * This file MUST FAIL to compile, with:
+ * Since the type-host exemption (ct commit 31c6823, first released in
+ * v0.24.0), a chain built from `map trait ... for type T *` methods may appear
+ * in any expression position. The rule still rejects a *dynamically
+ * dispatched* method call on a temporary, because that needs a `__ct_tmpN`
+ * hoist. This file MUST FAIL to compile with:
  *
  *   a method call on a temporary is only allowed at the start of a statement
  *   or of an assignment
  *
- * A function call as the root of a chain inside a larger expression needs a
- * compiler-generated temporary, and a temporary may only open a statement or
- * an assignment. The legal rewrite binds first:
+ * The legal rewrite binds first:
  *
- *   d = text().toDoc();
- *   printf("%d\n", d.root().kind());
+ *   struct Num *n = mkNum();
+ *   printf("%d\n", n->value());
  *
  * tests/run.sh asserts both the failure and the message, so the limit stays
- * measured rather than remembered. Do not "fix" this file.
+ * measured rather than remembered. Do not "fix" this file to compile.
  *
  * License: MIT (see LICENSE).
  */
-
 #include <stdio.h>
 
-import json::Json;
+trait Node {
+    int value();
+}
 
-char *text(void)
+struct Num {
+    int v;
+} use Node;
+
+impl Node for Num {
+    int value() { return self->v; }
+}
+
+struct Num *mkNum(void)
 {
-    return "{\"a\":[1,2]}";
+    static struct Num n = { 7 };
+    return &n;
 }
 
 int main(void)
 {
-    printf("case=%d\n", text().toDoc().root().kind());
+    printf("%d\n", mkNum().value());
     return 0;
 }

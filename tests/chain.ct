@@ -12,8 +12,8 @@
 
 #include <stdio.h>
 
-import json::JsonTypes;
-import json::Json;
+import cJSON::JsonTypes;
+import cJSON::Json;
 
 int passed = 0;
 int failed = 0;
@@ -39,7 +39,7 @@ int main(void)
     int st;
 
     /* ---- C1.3 / C1.5: every config setter returns the receiver itself ---- */
-    d = json::Lib.newDoc();
+    d = cJSON::Lib.newDoc();
     check(d.setMaxDepth(10) == d, "setMaxDepth returns the receiver");
     check(d.setMaxNodes(100) == d, "setMaxNodes returns the receiver");
     check(d.setMaxString(1000) == d, "setMaxString returns the receiver");
@@ -53,7 +53,7 @@ int main(void)
     d.drop();
 
     /* ---- C1.6: starting form 1, a variable receiver ---- */
-    d = json::Lib.newDoc();
+    d = cJSON::Lib.newDoc();
     check(d.setMaxDepth(8).parse("[1]") == JSON_OK, "variable receiver chain");
     d.drop();
 
@@ -64,22 +64,22 @@ int main(void)
     d.drop();
 
     /* ---- C1.6: starting form 3, a namespace-call receiver ---- */
-    d = json::Lib.newDoc().setMaxDepth(16);
+    d = cJSON::Lib.newDoc().setMaxDepth(16);
     check(d != 0, "call-result receiver chain");
     check(d.parse("[true]") == JSON_OK, "the call-result chain is usable");
     d.drop();
 
     /* ---- C1.4: builders return the node they were called on ---- */
-    o = json::Lib.newObject();
+    o = cJSON::Lib.newObject();
     check(o != 0 && o.kind() == JSON_OBJECT, "newObject");
-    check(o.put("a", json::Lib.newNumber(1)) == o, "put returns the receiver");
-    check(o.put("b", json::Lib.newBool(1)) == o, "put returns the receiver again");
+    check(o.put("a", cJSON::Lib.newNumber(1)) == o, "put returns the receiver");
+    check(o.put("b", cJSON::Lib.newBool(1)) == o, "put returns the receiver again");
     check(o.childCount() == 2, "put added both members");
 
-    a = json::Lib.newArray();
+    a = cJSON::Lib.newArray();
     check(a != 0 && a.kind() == JSON_ARRAY, "newArray");
-    check(a.append(json::Lib.newString("x")) == a, "append returns the receiver");
-    check(a.append(json::Lib.newNull()) == a, "append returns the receiver again");
+    check(a.append(cJSON::Lib.newString("x")) == a, "append returns the receiver");
+    check(a.append(cJSON::Lib.newNull()) == a, "append returns the receiver again");
     check(a.childCount() == 2, "append added both elements");
 
     n = o.put("list", a);
@@ -87,25 +87,25 @@ int main(void)
     check(o.childByKey("list").childCount() == 2, "the subtree moved in");
 
     /* ---- C5.2: append preserves insertion order ---- */
-    ord = json::Lib.newArray().append(json::Lib.newNumber(3))
-              .append(json::Lib.newBool(1)).append(json::Lib.newNull());
+    ord = cJSON::Lib.newArray().append(cJSON::Lib.newNumber(3))
+              .append(cJSON::Lib.newBool(1)).append(cJSON::Lib.newNull());
     check(ord.childAt(0).kind() == JSON_NUMBER &&
           ord.childAt(1).kind() == JSON_TRUE &&
           ord.childAt(2).kind() == JSON_NULL,
           "append preserves insertion order");
-    d = json::Lib.newDoc().setRoot(ord);
+    d = cJSON::Lib.newDoc().setRoot(ord);
     d.drop();
 
     /* ---- C5.5: a null string is rejected, not dereferenced ---- */
-    check(json::Lib.newString(0) == 0, "newString(0) returns 0");
+    check(cJSON::Lib.newString(0) == 0, "newString(0) returns 0");
 
     /* ---- put replaces an existing member instead of duplicating it ---- */
-    check(o.put("a", json::Lib.newNumber(2)) == o, "put over an existing key chains");
+    check(o.put("a", cJSON::Lib.newNumber(2)) == o, "put over an existing key chains");
     check(o.childByKey("a").numberValue() == 2.0, "put replaced the value");
     check(o.childCount() == 3, "put did not add a duplicate member");
 
     /* ---- C1.4: a build chain hands the tree to a doc ---- */
-    d = json::Lib.newDoc();
+    d = cJSON::Lib.newDoc();
     check(d.setRoot(o) == d, "setRoot returns the receiver");
     check(d.root() == o, "setRoot adopts the caller's tree");
     st = d.writeBuf(buf, 128, 0);
@@ -114,20 +114,20 @@ int main(void)
     d.drop();
 
     /* ---- put / append guards return 0 and consume nothing ---- */
-    o = json::Lib.newObject();
-    a = json::Lib.newArray();
-    n = json::Lib.newNull();
+    o = cJSON::Lib.newObject();
+    a = cJSON::Lib.newArray();
+    n = cJSON::Lib.newNull();
     check(o.put("x", 0) == 0, "put with a null child returns 0");
     check(o.append(n) == 0, "append on an object returns 0");
     check(a.append(n) == a, "the rejected child is still the caller's");
     check(a.append(0) == 0, "append with a null child returns 0");
-    d = json::Lib.newDoc().setRoot(a);
+    d = cJSON::Lib.newDoc().setRoot(a);
     check(d.root().put("k", d.root()) == 0, "put on an array returns 0");
     check(d.root().childCount() == 1, "the rejected put left the array alone");
     d.drop();
 
     /* the empty object still needs an owner */
-    d = json::Lib.newDoc().setRoot(o);
+    d = cJSON::Lib.newDoc().setRoot(o);
     check(d.root() == o, "an empty built object is owned by a doc");
     /* C5.7: setRoot(0) drops the tree and leaves an empty doc */
     check(d.setRoot(0) == d, "setRoot(0) returns the receiver");

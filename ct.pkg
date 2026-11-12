@@ -1,8 +1,8 @@
-# json - JSON text <-> tree, mapped onto a bundled cJSON 1.7.19.
+# cJSON - JSON text <-> tree, mapped onto a bundled cJSON 1.7.19.
 #
-# Two layers: `json/Json.m.ct` (zero-cost mappings; `Node` hangs off
+# Two layers: `cJSON/Json.m.ct` (zero-cost mappings; `Node` hangs off
 # `JsonNode *`, `Doc` off `JsonDoc *`, `Text` off `char *`, and the
-# receiver-less constructors off `namespace json`) and `json/Json.shim.h`
+# receiver-less constructors off `namespace cJSON`) and `cJSON/Json.shim.h`
 # (the strict pre-parse validator, the doc, the accessors and the printer).
 #
 # cJSON is bundled under `third_party/`, never linked from the system: the
@@ -14,10 +14,10 @@
 #
 # `ct install` folds `cflags`/`ldflags` into the command it prints; both paths
 # are relative to the consumer root, where the package lands as
-# `vendor/json/`.
-name = json
+# `vendor/cJSON/`.
+name = cJSON
 version = 0.1.0
 licence = MIT
-cflags = -I vendor/json/third_party -DCJSON_NESTING_LIMIT=64
-ldflags = vendor/json/third_party/cJSON.c -lm
+cflags = -I vendor/cJSON/third_party -DCJSON_NESTING_LIMIT=64
+ldflags = vendor/cJSON/third_party/cJSON.c -lm
 requires = ct >= 0.20.3

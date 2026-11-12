@@ -16,8 +16,8 @@
 
 #include <stdio.h>
 
-import json::JsonTypes;
-import json::Json;
+import cJSON::JsonTypes;
+import cJSON::Json;
 import std::str::String;
 
 char *sample(void)
@@ -69,12 +69,12 @@ int main(int argc, char **argv)
     }
 
     if (setroot_mode != 0) {
-        d = json::Lib.newDoc();
+        d = cJSON::Lib.newDoc();
     }
 
     for (i = 0; i < n; i = i + 1) {
         if (fail_mode != 0) {
-            d = json::Lib.newDoc();
+            d = cJSON::Lib.newDoc();
             if (d.parse(bad()) == JSON_OK) {
                 printf("the duplicate-key input unexpectedly parsed\n");
                 d.drop();
@@ -82,7 +82,7 @@ int main(int argc, char **argv)
             }
             d.drop();
         } else if (ok_mode != 0) {
-            d = json::Lib.newDoc();
+            d = cJSON::Lib.newDoc();
             if (d.parse(sample()) != JSON_OK) {
                 printf("the sample document failed to parse\n");
                 d.drop();
@@ -110,14 +110,14 @@ int main(int argc, char **argv)
             d.drop();
         } else {
             /* C4.11: each setRoot frees the tree installed by the previous one */
-            a = json::Lib.newArray();
+            a = cJSON::Lib.newArray();
             for (k = 0; k < 12; k = k + 1) {
-                a.append(json::Lib.newNumber(k));
+                a.append(cJSON::Lib.newNumber(k));
             }
-            o = json::Lib.newObject();
+            o = cJSON::Lib.newObject();
             o.put("list", a);
-            o.put("name", json::Lib.newString("setroot"));
-            o.put("ok", json::Lib.newBool(1));
+            o.put("name", cJSON::Lib.newString("setroot"));
+            o.put("ok", cJSON::Lib.newBool(1));
             if (d.setRoot(o) != d) {
                 printf("setRoot did not return the receiver\n");
                 d.drop();

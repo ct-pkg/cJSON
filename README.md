@@ -1,11 +1,11 @@
-# json
+# cJSON
 
 JSON 文本与树之间的映射包。解析在进入树之前先跑一遍严格校验，树与渲染交给 `third_party/`
 里原样保留的 cJSON 1.7.19。对外只出现 `JsonDoc *` / `JsonNode *`，C 类型不出包。
 
 ```ct
-import json::JsonTypes;
-import json::Json;
+import cJSON::JsonTypes;
+import cJSON::Json;
 
 JsonDoc *d = "{\"name\":\"ct\",\"tags\":[\"c\",\"json\"]}".toDoc();
 char *name = d.root().childByKey("name").stringValue();
@@ -43,14 +43,14 @@ d.drop();
 
 - 目录名是 `third_party/`，不是 `vendor/`。`ct get` 的 `copy_tree` 会跳过名为 `vendor` 的目录
   （那类目录由 `ct.lock` 管理），包自带的 `vendor/` 装完就会缺文件；`cflags` / `ldflags`
-  里因此写的是 `vendor/json/third_party`——安装后包落在消费方的 `vendor/json/`，其后半段才是
+  里因此写的是 `vendor/cJSON/third_party`——安装后包落在消费方的 `vendor/cJSON/`，其后半段才是
   本包的 `third_party/`。
 - 安装后的构建命令由 `ct install` 打印，等价于：
 
   ```sh
-  ct build -I vendor/json \
-      --cflags '-I vendor/json/third_party -DCJSON_NESTING_LIMIT=64' \
-      --ldflags 'vendor/json/third_party/cJSON.c -lm' yourapp.ct -o yourapp
+  ct build -I vendor/cJSON \
+      --cflags '-I vendor/cJSON/third_party -DCJSON_NESTING_LIMIT=64' \
+      --ldflags 'vendor/cJSON/third_party/cJSON.c -lm' yourapp.ct -o yourapp
   ```
 
 - `CJSON_NESTING_LIMIT=64` 把底层库的编译期嵌套上限钉成包默认值；不定义时上游默认值是 1000，
@@ -72,12 +72,12 @@ d.drop();
 写：
 
 ```ct
-JsonNode *o = json::Lib.newObject().put("ok", json::Lib.newBool(1));
-JsonNode *a = json::Lib.newArray().append(json::Lib.newNumber(1));
-a.append(json::Lib.newString("two"));
+JsonNode *o = cJSON::Lib.newObject().put("ok", cJSON::Lib.newBool(1));
+JsonNode *a = cJSON::Lib.newArray().append(cJSON::Lib.newNumber(1));
+a.append(cJSON::Lib.newString("two"));
 o.put("items", a);
 
-JsonDoc *d = json::Lib.newDoc().setRoot(o);
+JsonDoc *d = cJSON::Lib.newDoc().setRoot(o);
 printf("%s\n", d.write(0));
 d.drop();
 ```
@@ -127,7 +127,7 @@ d.drop();
 | `errorCol` | `int errorCol()` | 出错列，按字节，1 起 |
 | `drop` | `void drop()` | 释放树与渲染文本；只能调用一次 |
 
-### 4.3 `namespace json`（`Lib`）
+### 4.3 `namespace cJSON`（`Lib`）
 
 | 方法 | 签名 | 语义 |
 | --- | --- | --- |
@@ -145,7 +145,7 @@ d.drop();
 ### 5.1 解析与读取
 
 ```ct
-JsonDoc *d = json::Lib.newDoc().setMaxDepth(32).setMaxNodes(10000);
+JsonDoc *d = cJSON::Lib.newDoc().setMaxDepth(32).setMaxNodes(10000);
 int st = d.parse("{\"id\":7,\"tags\":[\"a\",\"b\"]}");
 if (st != JSON_OK) {
     printf("bad json at %d:%d (%d)\n", d.errorLine(), d.errorCol(), st);
@@ -187,7 +187,7 @@ d.drop();
 ### 5.3 限制
 
 ```ct
-JsonDoc *d = json::Lib.newDoc()
+JsonDoc *d = cJSON::Lib.newDoc()
     .setMaxDepth(8).setMaxNodes(1000).setMaxString(4096).setMaxInput(65536);
 ```
 
@@ -197,12 +197,12 @@ JsonDoc *d = json::Lib.newDoc()
 ### 5.4 构建
 
 ```ct
-JsonNode *o = json::Lib.newObject().put("id", json::Lib.newNumber(7));
-JsonNode *tags = json::Lib.newArray().append(json::Lib.newString("a"));
-tags.append(json::Lib.newString("b"));
+JsonNode *o = cJSON::Lib.newObject().put("id", cJSON::Lib.newNumber(7));
+JsonNode *tags = cJSON::Lib.newArray().append(cJSON::Lib.newString("a"));
+tags.append(cJSON::Lib.newString("b"));
 o.put("tags", tags);
 
-JsonDoc *d = json::Lib.newDoc().setRoot(o);
+JsonDoc *d = cJSON::Lib.newDoc().setRoot(o);
 char *text = d.write(1);
 printf("%s\n", text);
 d.drop();
@@ -226,30 +226,32 @@ int need = d.writeBuf(buf, 64, 0);   /* 返回完整长度，可能大于 64 */
 
 ```ct
 /* 变量接收者 */
-JsonDoc *a1 = json::Lib.newDoc();
+JsonDoc *a1 = cJSON::Lib.newDoc();
 a1.setMaxDepth(8).parse("[1]");
 
 /* 字面量接收者 */
 JsonDoc *a2 = "{\"a\":1}".toDoc();
 
 /* 调用结果接收者 */
-JsonDoc *a3 = json::Lib.newDoc().setMaxDepth(16);
+JsonDoc *a3 = cJSON::Lib.newDoc().setMaxDepth(16);
 ```
 
-已知编译限制：临时值只能起一段链，且必须位于语句或赋值开头。把链再嵌进更大的表达式会报
-`a method call on a temporary is only allowed at the start of a statement or of an assignment`：
+临时值限制随编译器版本不同（实测，已记录在案）：
+
+- **ct v0.24.0 起**：type-host 链（本包的全部方法，如 `text().toDoc().root().kind()`）可以出现在
+  任意表达式位置，包括函数实参，不需要先落变量。
+- **动态派发**（`impl Trait for Type` 的 vtable 调用）仍受限制：临时值只能起一段链，且必须位于
+  语句或赋值开头，否则报
+  `a method call on a temporary is only allowed at the start of a statement or of an assignment`。
+- **ct v0.20.3**：两类调用都执行旧的严格限制；本包 `requires = ct >= 0.20.3`，在 0.20.3 上请把
+  链先落到变量再继续。
 
 ```ct
-/* 编译失败 */
+/* 0.24.0 起合法：type-host 链作实参 */
 printf("%d\n", text().toDoc().root().kind());
-
-/* 合法写法 */
-JsonDoc *d = text().toDoc();
-printf("%d\n", d.root().kind());
 ```
 
-变量开头的链不受这条限制，`printf("%d\n", d.root().childByKey("a").childCount())` 是合法的。
-包内 `tests/compile_fail/temp_receiver.ct` 用编译失败把这个限制钉住。
+包内 `tests/compile_fail/temp_receiver.ct` 改为动态派发形状，钉住仍然生效的那条规则。
 
 ## 6. 常见配方
 
@@ -276,9 +278,9 @@ while (it != 0) {
 构造嵌套请求体：
 
 ```ct
-JsonNode *req = json::Lib.newObject().put("method", json::Lib.newString("ping"));
-req.put("params", json::Lib.newArray().append(json::Lib.newNumber(1)));
-JsonDoc *d = json::Lib.newDoc().setRoot(req);
+JsonNode *req = cJSON::Lib.newObject().put("method", cJSON::Lib.newString("ping"));
+req.put("params", cJSON::Lib.newArray().append(cJSON::Lib.newNumber(1)));
+JsonDoc *d = cJSON::Lib.newDoc().setRoot(req);
 printf("%s\n", d.write(0));
 d.drop();
 ```
@@ -319,7 +321,7 @@ if (d.parse(text) != JSON_OK) {
 `toDoc()` 失败返回 0，且内部 doc 已经释放，错误码随之丢失。要看错误必须自己建 doc：
 
 ```ct
-JsonDoc *d = json::Lib.newDoc();
+JsonDoc *d = cJSON::Lib.newDoc();
 if (d.parse(text) != JSON_OK) {
     printf("%d at %d:%d\n", d.error(), d.errorLine(), d.errorCol());
 }
@@ -334,12 +336,12 @@ d.drop();
 | 术语 | 含义 | 本包中的所指 |
 | --- | --- | --- |
 | 句柄（handle） | 一个不透明指针，调用方只通过方法操作它，不直接碰内部结构。 | `JsonDoc *` 与 `JsonNode *`；两个 tag 都归本包（`struct ct_json_doc`、`struct ct_json_node`），vendored 的 `struct cJSON` 只在 shim 内部出现。 |
-| 宿主（host） | trait 方法挂靠的类型。 | 四个宿主：`JsonNode *`（`Node`）、`JsonDoc *`（`Doc`）、`namespace json`（`Lib`）、`char *`（`Text`）。 |
+| 宿主（host） | trait 方法挂靠的类型。 | 四个宿主：`JsonNode *`（`Node`）、`JsonDoc *`（`Doc`）、`namespace cJSON`（`Lib`）、`char *`（`Text`）。 |
 | 映射（map trait） | 把 trait 方法绑定到宿主并转调 C 函数的声明。 | `Json.m.ct` 里的 `map trait Node for type JsonNode *` 等四段，每行转调一个 `ct_json_*` 函数。 |
 | 链式返回自身（return receiver） | 方法返回接收者本身，使下一次调用可以接在后面。 | `setMaxDepth` / `setMaxNodes` / `setMaxString` / `setMaxInput` / `setRoot` / `put` / `append` 都返回接收者。 |
 | 所有权（ownership） | 谁负责释放一块内存的约定。 | 只有 `JsonDoc` 拥有树；`drop()` 映射到 `ct_json_doc_free()`，对整棵树调用一次 `cJSON_Delete()`。 |
 | 借用（borrow） | 只取得指针的使用权，不承担释放责任。 | `root()`、`firstChild()`、`nextSibling()`、`childAt()`、`childByKey()`、`stringValue()`、`key()`、`write()` 返回的都是借用指针，有效期到所属 doc 被 `drop()`。 |
-| `JsonDoc` | 一棵 JSON 树及其解析状态的所有者。 | `Json.m.ct` 中 `pub type JsonDoc = struct ct_json_doc;`；由 `json::Lib.newDoc()` 或 `"…".toDoc()` 创建，`drop()` 只挂在这个类型上。 |
+| `JsonDoc` | 一棵 JSON 树及其解析状态的所有者。 | `Json.m.ct` 中 `pub type JsonDoc = struct ct_json_doc;`；由 `cJSON::Lib.newDoc()` 或 `"…".toDoc()` 创建，`drop()` 只挂在这个类型上。 |
 | `JsonNode` | 树中一个值的句柄。 | `pub type JsonNode = struct ct_json_node;`；读取、`put`、`append` 都在它上面，它永远不拥有节点，因此没有节点级释放——对借用节点调用 `cJSON_Delete()` 会在 doc 释放时双重释放。 |
 | `ct_json_node` | 本包自己的节点句柄 tag，定义在 `Json.shim.h`，不单独分配。 | 句柄地址就是节点地址（`ct_json_handle()` / `ct_json_node_of()` 是恒等转换），所以 `setRoot(o)` 之后 `d.root() == o` 成立；vendored 的 `struct cJSON` 不再出现在任何公开签名里。 |
 | 严格模式（strict mode） | 先按规范逐字节校验文本，通过后才交给底层建树。 | `parse()` 先跑 `ct_json_validate()`，再调 `cJSON_ParseWithOpts()`；本包没有宽松开关，严格是唯一模式，失败时不会留下半棵树。 |
@@ -351,8 +353,8 @@ d.drop();
 | BOM | Byte Order Mark，UTF-8 下是开头的 `EF BB BF` 三字节。 | 出现在输入开头时直接返回 `JSON_ERR_BOM`，位置固定 1:1。 |
 | 往返（round-trip） | 文本解析成树、再把树渲染回文本的可逆性。 | 只在 15 位有效数字内成立；需要精确整数时用 `numberInt64()`，不要依赖文本层。 |
 | `%1.15g` | C 的数字格式，最多 15 位有效数字。 | `third_party/cJSON.c` 的 `print_number()` 用它输出数字，这是“15 位往返”的直接来源。 |
-| 临时值（temporary） | 没有变量名、只存在于表达式里的中间结果。 | 编译器只允许临时值出现在链首：`"…".toDoc()` 合法，把它再嵌进别的调用会被拒绝；夹具 `tests/compile_fail/temp_receiver.ct`。 |
-| 游离节点（detached node） | 尚未被任何 doc 接管的构造结果。 | `json::Lib.newNull` / `newBool` / `newNumber` / `newString` / `newArray` / `newObject` 的返回值；必须交给 `setRoot()`、`put()` 或 `append()`，否则就是无主泄漏。 |
+| 临时值（temporary） | 没有变量名、只存在于表达式里的中间结果。 | 动态派发仍要求临时值只能起链首；0.24.0 起 type-host 链不受此限，见 §5.6。夹具 `tests/compile_fail/temp_receiver.ct`。 |
+| 游离节点（detached node） | 尚未被任何 doc 接管的构造结果。 | `cJSON::Lib.newNull` / `newBool` / `newNumber` / `newString` / `newArray` / `newObject` 的返回值；必须交给 `setRoot()`、`put()` 或 `append()`，否则就是无主泄漏。 |
 | cJSON | 本包 vendored 的 C 语言 JSON 库。 | `third_party/cJSON.h` 与 `third_party/cJSON.c`，版本 1.7.19，原样保留、未打补丁。 |
 | `third_party/` | 包内自带第三方源码的目录名。 | 存放 cJSON；不能改名为 `vendor/`，因为 `ct get` 会整体跳过该名字。 |
 | `NUL` | 字节值 0 的写法，不是字符 `'0'`。 | `parse()` 用 `strlen()` 取输入长度，所以文本不能内嵌 NUL；`writeBuf()` 截断后补 NUL。 |
@@ -372,16 +374,29 @@ d.drop();
   `JSON_ERR_CONTROL` 拒绝——这是对 RFC 的一项偏离，夹具见 `tests/unit.ct`。
 - **嵌套上限 64**。编译期由 `CJSON_NESTING_LIMIT=64` 钉死，`setMaxDepth` 只能往小调。
 - **单根**。没有数组/对象以外的顶层容器，也没有多文档流。
-- **临时值链限制**，见 §5.6。
+- **动态派发的临时值链限制**，见 §5.6；type-host 链在 0.24.0 起不再受限。
 - **不合并重复键**。重复键直接报错，不做后者覆盖前者。
 - **渲染顺序**是插入顺序，不做键排序。
 
 ## 10. 版本与变更记录
 
+### 0.2.0（2026-11-12）
+
+- **破坏性改名**：包名 `json` → `cJSON`，`import json::Json` 改为 `import cJSON::Json`；
+  旧包名不再提供，升级需同步修改 import 与 `ct get` 参数。
+- 包内单元目录 `json/json/` → `cJSON/cJSON/`；`ct.pkg` 的 `name` / `cflags` / `ldflags`、
+  tests / demo / tools / README 全部同步。
+- `tests/compile_fail/temp_receiver.ct` 换成动态派发形状：ct v0.24.0 起 type-host 链可嵌在任意
+  表达式位置，动态派发仍受临时值规则限制（见 §5.6）。门禁钉在 ct v0.24.0。
+- 门禁新增：生成符号与 `third_party/cJSON.c` 全局符号集合不相交，且不得以 `cJSON_` 开头；
+  C1.1 改为按 C 类型形态判定，避免把包名 `cJSON` 误判为类型泄漏。
+- 门槛：`tools/check.sh` 90 passed / 0 failed，`tests/run.sh` 12 项 / 243 断言，
+  `-Wall -Wextra` 零告警。
+
 ### 0.1.0（2026-11-08）
 
 - 首个版本：严格校验 + 解析 + 树读取 + 构建 + 渲染。
-- 四个宿主：`JsonNode *`（19 个方法）、`JsonDoc *`（14 个）、`namespace json`（7 个构造器）、
+- 四个宿主：`JsonNode *`（19 个方法）、`JsonDoc *`（14 个）、`namespace cJSON`（7 个构造器）、
   `char *`（1 个 `toDoc`）。
 - 底层 cJSON 1.7.19 原样放在 `third_party/`，sha256 见 `tools/third_party.sha256`。
 - 按评审裁决删除节点级 `drop()` 与 `toJSON()`：doc 唯一拥有树，节点一律借用。

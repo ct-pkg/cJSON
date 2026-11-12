@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #
-# tests/run.sh - build and run the json package suites.
+# tests/run.sh - build and run the cJSON package suites.
 #
 #   1. builds unit / chain / serialize / sugar with -Wall -Wextra and fails on
 #      any compiler warning;
@@ -30,14 +30,15 @@ if ! command -v "$CT" >/dev/null 2>&1; then
     echo "set CT=/path/to/ct (ct >= 0.20.3, with type aliases)" >&2
     exit 1
 fi
+echo "ct: $("$CT" --version 2>&1)"
 
-work="${TMPDIR:-/tmp}/ct-json-test.$$"
+work="${TMPDIR:-/tmp}/ct-cjson-test.$$"
 rm -rf "$work"
 mkdir -p "$work/roots" || exit 1
 
-# `ct build` honours a single -I, but the suites import both `json::` and
+# `ct build` honours a single -I, but the suites import both `cJSON::` and
 # `std::str::`. One root with two symlinks covers both.
-ln -s "$pkg/json" "$work/roots/json"
+ln -s "$pkg/cJSON" "$work/roots/cJSON"
 if [ -d "$repo/std/std" ]; then
     ln -s "$repo/std/std" "$work/roots/std"
 fi
@@ -115,10 +116,10 @@ else
     fi
 fi
 if build "$here/compile_fail/enum_needs_types.ct" "$work/enum_needs_types" "$work/cf_enum.log"; then
-    bad "enum_needs_types" "compiled, but JSON_OK should need json::JsonTypes"
+    bad "enum_needs_types" "compiled, but JSON_OK should need cJSON::JsonTypes"
 else
     if grep -q 'JSON_OK' "$work/cf_enum.log"; then
-        ok "C9.3 JSON_OK needs json::JsonTypes"
+        ok "C9.3 JSON_OK needs cJSON::JsonTypes"
     else
         bad "enum_needs_types" "failed with a different message; see log"
         cat "$work/cf_enum.log" >&2
@@ -146,7 +147,7 @@ else
 fi
 echo
 
-printf 'json: %d passed, %d failed\n' "$pass" "$fail"
+printf 'cJSON: %d passed, %d failed\n' "$pass" "$fail"
 if [ "$fail" -ne 0 ]; then
     exit 1
 fi
